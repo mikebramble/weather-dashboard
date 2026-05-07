@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>NWS 7-Day Forecast Dashboard</title>
+    <title>Pro NWS 7-Day Forecast Dashboard</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
         body {
@@ -77,8 +77,8 @@
         <h2>7-Day NWS Graphical Forecast</h2>
         
         <div class="controls">
-            <label>Latitude: <input type="number" id="latInput" value="34.1486" step="0.0001"></label>
-            <label>Longitude: <input type="number" id="lonInput" value="-118.0013" step="0.0001"></label>
+            <label>Latitude: <input type="number" id="latInput" value="38.8951" step="0.0001"></label>
+            <label>Longitude: <input type="number" id="lonInput" value="-77.0364" step="0.0001"></label>
             <button onclick="fetchWeatherData()">Update Forecast</button>
         </div>
         
@@ -96,8 +96,15 @@
         let bottomChartInstance = null;
         
         async function fetchWeatherData() {
-            const lat = document.getElementById('latInput').value;
-            const lon = document.getElementById('lonInput').value;
+            const latInput = document.getElementById('latInput');
+            const lonInput = document.getElementById('lonInput');
+            
+            const lat = latInput.value;
+            const lon = lonInput.value;
+
+            // SAVE TO LOCAL STORAGE: Remember this device's preference
+            localStorage.setItem('savedLat', lat);
+            localStorage.setItem('savedLon', lon);
 
             try {
                 const pointUrl = `https://api.weather.gov/points/${lat},${lon}`;
@@ -210,7 +217,6 @@
                     let shade = false;
                     let startX = chartArea.left;
                     
-                    // Pulling the top boundary higher into the new expanded padding
                     const topBoundary = showLabels ? chartArea.top - 85 : chartArea.top;
 
                     for (let i = 1; i < chart.data.labels.length; i++) {
@@ -227,7 +233,6 @@
                             if (showLabels) {
                                 const midX = startX + (endX - startX) / 2;
                                 
-                                // Lowered the text coordinates relative to the top of the chart area
                                 ctx.fillStyle = '#333';
                                 ctx.font = 'bold 13px sans-serif';
                                 ctx.textAlign = 'center';
@@ -315,7 +320,6 @@
                 options: {
                     responsive: true,
                     maintainAspectRatio: false,
-                    // FORCE MASSIVE PADDING: Gives 90px of space entirely dedicated to the legend and our custom text
                     layout: { padding: { top: 90 } }, 
                     interaction: { mode: 'index', intersect: false },
                     plugins: { 
@@ -399,7 +403,20 @@
             bottomChartInstance.canvas.onmouseout = () => { topChartInstance.tooltip.setActiveElements([]); topChartInstance.update(); };
         }
 
-        fetchWeatherData();
+        // INITIALIZATION SCRIPT: Check local memory before running the first fetch
+        window.onload = () => {
+            const savedLat = localStorage.getItem('savedLat');
+            const savedLon = localStorage.getItem('savedLon');
+            
+            if (savedLat && savedLon) {
+                document.getElementById('latInput').value = savedLat;
+                document.getElementById('lonInput').value = savedLon;
+            }
+            
+            // Fetch weather using either the saved data or the Washington D.C. default
+            fetchWeatherData();
+        };
+
     </script>
 </body>
 </html>
