@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <!-- Sun -->
+  <circle cx="32" cy="32" r="18" fill="#FDB813"></circle>
+
+  <!-- Chart line -->
+  <polyline points="14,40 26,30 36,34 50,20" fill="none" stroke="#1565C0" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"></polyline>
+
+  <!-- Arrow -->
+  <polyline points="44,20 50,20 50,26" fill="none" stroke="#1565C0" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"></polyline>
+</svg>
