@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>NWS 7-Day Forecast Dashboard</title>
-
+    
     <link rel="icon" href="favicon.svg" type="image/svg+xml">
     
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
@@ -40,49 +40,50 @@
             align-items: flex-start;
         }
         
-        /* SEARCH AUTOCOMPLETE STYLES */
-        .search-wrapper {
-            position: relative;
-            display: inline-block;
-            text-align: left;
-        }
-        .controls input {
-            padding: 8px 12px; border: 1px solid #ced4da;
-            border-radius: 4px; width: 280px;
-            font-size: 14px;
-        }
+        .search-wrapper { position: relative; display: inline-block; text-align: left; }
+        .controls input { padding: 8px 12px; border: 1px solid #ced4da; border-radius: 4px; width: 280px; font-size: 14px; }
         #suggestionsList {
-            position: absolute; top: 100%; left: 0; right: 0;
-            background: white; border: 1px solid #ced4da;
-            border-radius: 4px; z-index: 1000;
-            list-style: none; padding: 0; margin: 4px 0 0 0;
-            max-height: 250px; overflow-y: auto; display: none;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+            position: absolute; top: 100%; left: 0; right: 0; background: white; border: 1px solid #ced4da;
+            border-radius: 4px; z-index: 1000; list-style: none; padding: 0; margin: 4px 0 0 0;
+            max-height: 250px; overflow-y: auto; display: none; box-shadow: 0 4px 12px rgba(0,0,0,0.15);
         }
-        #suggestionsList li {
-            padding: 10px 12px; cursor: pointer; border-bottom: 1px solid #f0f2f5; font-size: 14px; color: #333;
-        }
+        #suggestionsList li { padding: 10px 12px; cursor: pointer; border-bottom: 1px solid #f0f2f5; font-size: 14px; color: #333; }
         #suggestionsList li:hover { background-color: #e9ecef; }
-        
-        .controls button {
-            padding: 8px 16px; background-color: #0d6efd; color: white;
-            border: none; border-radius: 4px; font-weight: 600;
-            cursor: pointer; transition: background-color 0.2s;
-        }
+        .controls button { padding: 8px 16px; background-color: #0d6efd; color: white; border: none; border-radius: 4px; font-weight: 600; cursor: pointer; transition: background-color 0.2s; }
         .controls button:hover { background-color: #0b5ed7; }
         .instructions { font-size: 12px; color: #6c757d; margin-top: 12px; }
         
         h2 { text-align: center; color: #333; margin-top: 0; margin-bottom: 5px; }
         #gridSubtitle { text-align: center; color: #666; font-size: 14px; margin-bottom: 15px; font-weight: 500;}
         
+        /* CURRENT CONDITIONS BLOCK */
+        #currentConditions {
+            display: none; 
+            position: relative; 
+            justify-content: center; align-items: center; gap: 25px;
+            margin: 0 20px 20px 20px; padding: 30px 20px 20px 20px;
+            background: linear-gradient(135deg, #fdfbfb 0%, #ebedee 100%);
+            border-radius: 8px; border: 1px solid #e9ecef;
+            box-shadow: inset 0 0 10px rgba(0,0,0,0.02);
+        }
+        /* Centered Label Style */
+        .cc-label {
+            position: absolute; top: 12px; left: 0; width: 100%; text-align: center; font-size: 11px; 
+            color: #6c757d; text-transform: uppercase; font-weight: 700; letter-spacing: 1px;
+        }
+        .cc-left { display: flex; align-items: center; gap: 15px; }
+        .cc-left img { width: 75px; height: 75px; border-radius: 10px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+        .cc-temp { font-size: 48px; font-weight: bold; color: #212529; letter-spacing: -1px; }
+        .cc-right { display: flex; flex-direction: column; justify-content: center; border-left: 2px solid #dee2e6; padding-left: 25px; }
+        .cc-summary { font-size: 22px; font-weight: 600; color: #0d6efd; margin-bottom: 5px; }
+        .cc-details { font-size: 14px; color: #495057; display: flex; gap: 15px; }
+        .cc-details span { display: flex; align-items: center; }
+
         .chart-wrapper { position: relative; padding: 0 20px; cursor: crosshair; }
         
-        /* Unified HTML Tooltip */
         #customTooltip {
-            position: absolute; background: rgba(255, 255, 255, 0.95);
-            border: 1px solid #ccc; padding: 12px; border-radius: 6px;
-            pointer-events: none; display: none; z-index: 20;
-            box-shadow: 0 4px 8px rgba(0,0,0,0.15); font-size: 13px; min-width: 180px;
+            position: absolute; background: rgba(255, 255, 255, 0.95); border: 1px solid #ccc; padding: 12px; border-radius: 6px;
+            pointer-events: none; display: none; z-index: 20; box-shadow: 0 4px 8px rgba(0,0,0,0.15); font-size: 13px; min-width: 180px;
         }
         #customTooltip .tt-header { font-weight: bold; margin-bottom: 8px; border-bottom: 1px solid #eee; padding-bottom: 4px; color: #333;}
         #customTooltip .tt-row { display: flex; justify-content: space-between; margin-bottom: 4px; }
@@ -110,6 +111,8 @@
             <div class="instructions">Type a city or postal code and select it from the dropdown list.</div>
         </div>
         
+        <div id="currentConditions"></div>
+        
         <div id="customTooltip"></div>
         
         <div class="chart-wrapper"><canvas id="topChart" height="390"></canvas></div>
@@ -124,7 +127,6 @@
     <script>
         let charts = [];
         
-        // --- AUTOCOMPLETE LOGIC ---
         const searchInput = document.getElementById('locationInput');
         const suggestionsList = document.getElementById('suggestionsList');
         let debounceTimer;
@@ -132,11 +134,7 @@
         searchInput.addEventListener('input', () => {
             clearTimeout(debounceTimer);
             const query = searchInput.value;
-            
-            if(query.length < 2) { 
-                suggestionsList.style.display = 'none'; 
-                return; 
-            }
+            if(query.length < 2) { suggestionsList.style.display = 'none'; return; }
             
             debounceTimer = setTimeout(async () => {
                 try {
@@ -159,21 +157,15 @@
                             suggestionsList.appendChild(li);
                         });
                         suggestionsList.style.display = 'block';
-                    } else {
-                        suggestionsList.style.display = 'none';
-                    }
-                } catch (e) {
-                    console.error("Autofill error:", e);
-                }
+                    } else { suggestionsList.style.display = 'none'; }
+                } catch (e) { console.error("Autofill error:", e); }
             }, 300); 
         });
 
-        // Hide suggestions if you click outside the box
         document.addEventListener('click', (e) => {
             if (e.target !== searchInput) suggestionsList.style.display = 'none';
         });
 
-        // Fallback for if they just hit the physical "Update" button instead of the dropdown
         async function handleSearchButton() {
             const query = searchInput.value;
             document.getElementById('gridSubtitle').innerText = "Locating...";
@@ -182,7 +174,6 @@
             try {
                 const res = await fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(query)}&count=1&language=en&format=json`);
                 const data = await res.json();
-                
                 if (!data.results || data.results.length === 0) throw new Error("Could not find location.");
                 
                 const item = data.results[0];
@@ -196,16 +187,15 @@
             }
         }
 
-        // --- WEATHER FETCH LOGIC ---
         async function fetchWeatherData(lat, lon, locationName) {
             
-            // Save hard coordinates so page reloads are instant
             localStorage.setItem('savedLat', lat);
             localStorage.setItem('savedLon', lon);
             localStorage.setItem('savedLocationName', locationName);
 
             try {
                 document.getElementById('gridSubtitle').innerText = "Fetching NWS Data...";
+                document.getElementById('currentConditions').style.display = 'none';
 
                 const pointResponse = await fetch(`https://api.weather.gov/points/${lat},${lon}`);
                 if (!pointResponse.ok) throw new Error("Invalid coordinates for NWS.");
@@ -213,15 +203,35 @@
                 
                 const city = pointData.properties.relativeLocation.properties.city;
                 const state = pointData.properties.relativeLocation.properties.state;
-                const gridId = pointData.properties.gridId;
-                const gridX = pointData.properties.gridX;
-                const gridY = pointData.properties.gridY;
+                document.getElementById('gridSubtitle').innerText = `${city}, ${state} | NWS Grid: ${pointData.properties.gridId} ${pointData.properties.gridX},${pointData.properties.gridY}`;
                 
-                document.getElementById('gridSubtitle').innerText = `${city}, ${state} | NWS Grid: ${gridId} ${gridX},${gridY}`;
+                const [forecastResponse, hourlyResponse, gridResponse] = await Promise.all([
+                    fetch(pointData.properties.forecast),
+                    fetch(pointData.properties.forecastHourly),
+                    fetch(pointData.properties.forecastGridData)
+                ]);
+
+                const hourlyData = await hourlyResponse.json();
+                const currentCond = hourlyData.properties.periods[0];
                 
-                const forecastResponse = await fetch(pointData.properties.forecast);
+                const ccDiv = document.getElementById('currentConditions');
+                ccDiv.innerHTML = `
+                    <div class="cc-label">Current Forecasted Conditions</div>
+                    <div class="cc-left">
+                        <img src="${currentCond.icon}" alt="${currentCond.shortForecast}">
+                        <div class="cc-temp">${currentCond.temperature}°${currentCond.temperatureUnit}</div>
+                    </div>
+                    <div class="cc-right">
+                        <div class="cc-summary">${currentCond.shortForecast}</div>
+                        <div class="cc-details">
+                            <span><b>Wind:</b>&nbsp;${currentCond.windSpeed} ${currentCond.windDirection}</span>
+                            <span><b>Humidity:</b>&nbsp;${currentCond.relativeHumidity.value}%</span>
+                        </div>
+                    </div>
+                `;
+                ccDiv.style.display = 'flex';
+
                 const forecastData = await forecastResponse.json();
-                
                 const dailySummaries = {};
                 forecastData.properties.periods.forEach(p => {
                     const dateKey = new Date(p.startTime).toLocaleDateString('en-US');
@@ -241,9 +251,7 @@
                     });
                 }));
 
-                const gridResponse = await fetch(pointData.properties.forecastGridData);
                 const gridData = await gridResponse.json();
-
                 const labels = [], temperatures = [], apparentTemps = [], precipChances = [];
                 const humidities = [], skyCovers = [], windSpeeds = [], windGusts = [];
                 const dailyExtremes = {};
@@ -356,7 +364,6 @@
             charts = [];
             const forceAxisWidth = (scale) => { scale.width = 55; };
 
-            // NATIVE CANVAS CROSSHAIR PLUGIN
             const crosshairPlugin = {
                 id: 'crosshairPlugin',
                 afterDraw: (chart) => {
@@ -479,7 +486,6 @@
                 plugins: [createDayShadingPlugin('bottom', false), crosshairPlugin] 
             }));
 
-            // Sync Logic connecting Crosshair to Mouse Data natively!
             const tooltipEl = document.getElementById('customTooltip');
             const container = document.querySelector('.dashboard-container');
 
@@ -490,21 +496,18 @@
                     if (points.length) {
                         const index = points[0].index;
                         
-                        // Prevent logic if hovering over the blank padded zones
                         if (sourceChart.data.datasets[0].data[index] === null) {
                             tooltipEl.style.display = 'none';
                             charts.forEach(tc => { tc.setActiveElements([]); tc.update(); });
                             return;
                         }
 
-                        // Tell ALL charts to explicitly activate the hovered datapoint
                         charts.forEach(tc => {
                             const activeEls = tc.data.datasets.map((_, dIdx) => ({ datasetIndex: dIdx, index: index }));
                             tc.setActiveElements(activeEls);
-                            tc.update(); // Triggers the crosshair plugin synchronously
+                            tc.update(); 
                         });
 
-                        // Build HTML Tooltip
                         const dateObj = new Date(labels[index]);
                         const timeString = dateObj.toLocaleString([], {weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute:'2-digit'});
                         
@@ -521,7 +524,6 @@
                             <div class="tt-row"><span style="color:#333;"><span class="tt-color" style="background:rgba(102,51,153,0.6);"></span>Gust:</span> <b>${windGusts[index]} kts</b></div>
                         `;
 
-                        // Calculate Tooltip Position
                         tooltipEl.style.display = 'block';
                         const containerRect = container.getBoundingClientRect();
                         const mouseX = e.clientX - containerRect.left;
@@ -529,7 +531,7 @@
 
                         let ttLeft = mouseX + 15;
                         if (ttLeft + tooltipEl.offsetWidth > containerRect.width - 10) {
-                            ttLeft = mouseX - tooltipEl.offsetWidth - 15; // Flip to left side
+                            ttLeft = mouseX - tooltipEl.offsetWidth - 15; 
                         }
                         
                         tooltipEl.style.left = ttLeft + 'px';
