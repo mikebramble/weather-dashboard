@@ -12,7 +12,8 @@
         body {
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
             background-color: #f0f2f5;
-            margin: 20px;
+            margin: 0;
+            padding: 20px 10px;
         }
         .dashboard-container {
             width: 100%;
@@ -40,8 +41,8 @@
             align-items: flex-start;
         }
         
-        .search-wrapper { position: relative; display: inline-block; text-align: left; }
-        .controls input { padding: 8px 12px; border: 1px solid #ced4da; border-radius: 4px; width: 280px; font-size: 14px; }
+        .search-wrapper { position: relative; display: inline-block; text-align: left; width: 100%; max-width: 320px;}
+        .controls input { padding: 8px 12px; border: 1px solid #ced4da; border-radius: 4px; width: 100%; box-sizing: border-box; font-size: 14px; }
         #suggestionsList {
             position: absolute; top: 100%; left: 0; right: 0; background: white; border: 1px solid #ced4da;
             border-radius: 4px; z-index: 1000; list-style: none; padding: 0; margin: 4px 0 0 0;
@@ -49,7 +50,7 @@
         }
         #suggestionsList li { padding: 10px 12px; cursor: pointer; border-bottom: 1px solid #f0f2f5; font-size: 14px; color: #333; }
         #suggestionsList li:hover { background-color: #e9ecef; }
-        .controls button { padding: 8px 16px; background-color: #0d6efd; color: white; border: none; border-radius: 4px; font-weight: 600; cursor: pointer; transition: background-color 0.2s; }
+        .controls button { padding: 8px 16px; background-color: #0d6efd; color: white; border: none; border-radius: 4px; font-weight: 600; cursor: pointer; transition: background-color 0.2s; white-space: nowrap;}
         .controls button:hover { background-color: #0b5ed7; }
         .instructions { font-size: 12px; color: #6c757d; margin-top: 12px; }
         
@@ -70,15 +71,9 @@
             position: absolute; top: 12px; left: 0; width: 100%; text-align: center; font-size: 11px; 
             color: #6c757d; text-transform: uppercase; font-weight: 700; letter-spacing: 1px;
         }
-        .cc-panel {
-            flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center;
-        }
-        .cc-panel-title {
-            font-size: 11px; color: #adb5bd; font-weight: 600; margin-bottom: 15px; text-transform: uppercase; letter-spacing: 0.5px; text-align: center;
-        }
-        .cc-panel-content {
-            display: flex; align-items: center; justify-content: center; gap: 15px; width: 100%;
-        }
+        .cc-panel { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; width: 100%; }
+        .cc-panel-title { font-size: 11px; color: #adb5bd; font-weight: 600; margin-bottom: 15px; text-transform: uppercase; letter-spacing: 0.5px; text-align: center; }
+        .cc-panel-content { display: flex; align-items: center; justify-content: center; gap: 15px; width: 100%; }
         .cc-divider { width: 2px; background-color: #dee2e6; margin: 0 15px; border-radius: 2px;}
         
         .cc-icon { width: 65px; height: 65px; border-radius: 10px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); background: white;}
@@ -87,7 +82,19 @@
         .cc-desc { font-size: 16px; font-weight: 600; color: #0d6efd; margin-bottom: 4px; }
         .cc-metric { font-size: 13px; color: #495057; }
 
-        .chart-wrapper { position: relative; padding: 0 20px; cursor: crosshair; }
+        /* SCROLLABLE CHART CONTAINER FOR MOBILE */
+        .chart-scroll-container {
+            width: 100%;
+            overflow-x: auto;
+            -webkit-overflow-scrolling: touch; /* Smooth momentum scrolling on iOS */
+        }
+        #chartMasterWrapper {
+            position: relative;
+            min-width: 900px; /* Forces charts to maintain legibility; triggers horizontal scroll on small screens */
+            padding: 0 20px;
+            cursor: crosshair;
+        }
+        .chart-wrapper { position: relative; }
         
         #customTooltip {
             position: absolute; background: rgba(255, 255, 255, 0.95); border: 1px solid #ccc; padding: 12px; border-radius: 6px;
@@ -100,6 +107,27 @@
         .footer { text-align: center; margin-top: 20px; font-size: 13px; color: #6c757d; }
         .footer a { color: #0d6efd; text-decoration: none; }
         .footer a:hover { text-decoration: underline; }
+
+        /* --- RESPONSIVE MEDIA QUERIES FOR MOBILE PHONES --- */
+        @media (max-width: 768px) {
+            .controls {
+                flex-direction: column;
+                align-items: stretch;
+            }
+            .search-wrapper { max-width: 100%; }
+            .controls button { width: 100%; padding: 12px; font-size: 16px; }
+            
+            #currentConditions {
+                flex-direction: column;
+                padding: 40px 15px 15px 15px;
+                gap: 20px;
+            }
+            .cc-divider {
+                width: 100%;
+                height: 2px;
+                margin: 5px 0;
+            }
+        }
     </style>
 </head>
 <body>
@@ -121,11 +149,14 @@
         
         <div id="currentConditions"></div>
         
-        <div id="customTooltip"></div>
-        
-        <div class="chart-wrapper"><canvas id="topChart" height="390"></canvas></div>
-        <div class="chart-wrapper" style="margin-top: -10px;"><canvas id="middleChart" height="180"></canvas></div>
-        <div class="chart-wrapper" style="margin-top: -10px;"><canvas id="bottomChart" height="180"></canvas></div>
+        <div class="chart-scroll-container">
+            <div id="chartMasterWrapper">
+                <div id="customTooltip"></div>
+                <div class="chart-wrapper"><canvas id="topChart" height="390"></canvas></div>
+                <div class="chart-wrapper" style="margin-top: -10px;"><canvas id="middleChart" height="180"></canvas></div>
+                <div class="chart-wrapper" style="margin-top: -10px;"><canvas id="bottomChart" height="180"></canvas></div>
+            </div>
+        </div>
         
         <div class="footer">
             Data provided by the <a href="https://www.weather.gov/documentation/services-web-api" target="_blank">National Weather Service API</a>. Geocoding by Open-Meteo.
@@ -216,14 +247,12 @@
                 const forecastPromise = fetch(pointData.properties.forecast).then(r => r.json());
                 const gridPromise = fetch(pointData.properties.forecastGridData).then(r => r.json());
                 
-                // DUAL-STATION METAR FETCH
                 const metarPromise = (async () => {
                     try {
                         const stRes = await fetch(pointData.properties.observationStations);
                         const stData = await stRes.json();
                         if (!stData.features || stData.features.length === 0) return null;
                         
-                        // 1. Grab absolute closest station
                         const nearestStation = stData.features[0];
                         let nearestObs = null;
                         try {
@@ -232,13 +261,11 @@
                             nearestObs = nData.properties;
                         } catch (e) { console.error(e); }
 
-                        // 2. Scan for closest COMPREHENSIVE airport METAR
                         let airportStation = null;
                         let airportObs = null;
 
                         for (let i = 0; i < Math.min(10, stData.features.length); i++) {
                             const station = stData.features[i];
-                            // Skip if it's the exact same one and we already know it lacks data
                             if (station.id === nearestStation.id && nearestObs && !nearestObs.textDescription) continue;
 
                             try {
@@ -247,7 +274,6 @@
                                 const obsData = await obsRes.json();
                                 const obs = obsData.properties;
 
-                                // Must have a text description AND humidity to qualify as comprehensive
                                 if (obs.textDescription && obs.relativeHumidity?.value !== null) {
                                     airportStation = station;
                                     airportObs = obs;
@@ -268,11 +294,9 @@
 
                 const [forecastData, gridData, liveData] = await Promise.all([forecastPromise, gridPromise, metarPromise]);
 
-                // RENDER DUAL LIVE METAR CONDITIONS
                 if (liveData) {
                     const ccDiv = document.getElementById('currentConditions');
                     
-                    // Helper function to extract and format metrics cleanly
                     function processObs(obs) {
                         const tempC = obs.temperature?.value;
                         const tempF = tempC !== null && tempC !== undefined ? Math.round((tempC * 9/5) + 32) : '--';
@@ -291,7 +315,6 @@
 
                     let html = `<div class="cc-label">Live Observations</div>`;
                     
-                    // Left Panel: Nearest
                     if (liveData.nearest) {
                         const n = processObs(liveData.nearest.obs);
                         html += `
@@ -310,7 +333,6 @@
                         `;
                     }
 
-                    // Right Panel: Airport (Only render if it's a different station than the nearest)
                     if (liveData.airport && (!liveData.nearest || liveData.airport.station.stationIdentifier !== liveData.nearest.station.stationIdentifier)) {
                         const a = processObs(liveData.airport.obs);
                         if(liveData.nearest) html += `<div class="cc-divider"></div>`;
@@ -588,7 +610,7 @@
             }));
 
             const tooltipEl = document.getElementById('customTooltip');
-            const container = document.querySelector('.dashboard-container');
+            const wrapper = document.getElementById('chartMasterWrapper');
 
             charts.forEach(sourceChart => {
                 sourceChart.canvas.addEventListener('mousemove', (e) => {
@@ -626,12 +648,14 @@
                         `;
 
                         tooltipEl.style.display = 'block';
-                        const containerRect = container.getBoundingClientRect();
-                        const mouseX = e.clientX - containerRect.left;
-                        const mouseY = e.clientY - containerRect.top;
+                        
+                        // Positioning updated for scrolling container support
+                        const wrapperRect = wrapper.getBoundingClientRect();
+                        const mouseX = e.clientX - wrapperRect.left;
+                        const mouseY = e.clientY - wrapperRect.top;
 
                         let ttLeft = mouseX + 15;
-                        if (ttLeft + tooltipEl.offsetWidth > containerRect.width - 10) {
+                        if (ttLeft + tooltipEl.offsetWidth > wrapperRect.width - 10) {
                             ttLeft = mouseX - tooltipEl.offsetWidth - 15; 
                         }
                         
