@@ -37,7 +37,6 @@
         .controls {
             display: flex;
             justify-content: center;
-            gap: 15px;
             align-items: flex-start;
         }
         
@@ -50,8 +49,6 @@
         }
         #suggestionsList li { padding: 10px 12px; cursor: pointer; border-bottom: 1px solid #f0f2f5; font-size: 14px; color: #333; }
         #suggestionsList li:hover { background-color: #e9ecef; }
-        .controls button { padding: 8px 16px; background-color: #0d6efd; color: white; border: none; border-radius: 4px; font-weight: 600; cursor: pointer; transition: background-color 0.2s; white-space: nowrap;}
-        .controls button:hover { background-color: #0b5ed7; }
         .instructions { font-size: 12px; color: #6c757d; margin-top: 12px; }
         
         h2 { text-align: center; color: #333; margin-top: 0; margin-bottom: 5px; }
@@ -86,11 +83,11 @@
         .chart-scroll-container {
             width: 100%;
             overflow-x: auto;
-            -webkit-overflow-scrolling: touch; /* Smooth momentum scrolling on iOS */
+            -webkit-overflow-scrolling: touch; 
         }
         #chartMasterWrapper {
             position: relative;
-            min-width: 900px; /* Forces charts to maintain legibility; triggers horizontal scroll on small screens */
+            min-width: 900px; 
             padding: 0 20px;
             cursor: crosshair;
         }
@@ -112,10 +109,9 @@
         @media (max-width: 768px) {
             .controls {
                 flex-direction: column;
-                align-items: stretch;
+                align-items: center;
             }
             .search-wrapper { max-width: 100%; }
-            .controls button { width: 100%; padding: 12px; font-size: 16px; }
             
             #currentConditions {
                 flex-direction: column;
@@ -142,7 +138,6 @@
                     <input type="text" id="locationInput" placeholder="Enter City or Zip Code" autocomplete="off" value="Washington, D.C.">
                     <ul id="suggestionsList"></ul>
                 </div>
-                <button onclick="handleSearchButton()">Update Forecast</button>
             </div>
             <div class="instructions">Type a city, postal code, or airport code and select it from the dropdown list.</div>
         </div>
@@ -204,27 +199,6 @@
         document.addEventListener('click', (e) => {
             if (e.target !== searchInput) suggestionsList.style.display = 'none';
         });
-
-        async function handleSearchButton() {
-            const query = searchInput.value;
-            document.getElementById('gridSubtitle').innerText = "Locating...";
-            suggestionsList.style.display = 'none';
-
-            try {
-                const res = await fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(query)}&count=1&language=en&format=json`);
-                const data = await res.json();
-                if (!data.results || data.results.length === 0) throw new Error("Could not find location.");
-                
-                const item = data.results[0];
-                const adminName = item.admin1 ? `, ${item.admin1}` : '';
-                searchInput.value = `${item.name}${adminName}`;
-                
-                fetchWeatherData(item.latitude, item.longitude, searchInput.value);
-            } catch (error) {
-                alert(error.message);
-                document.getElementById('gridSubtitle').innerText = "Location Error";
-            }
-        }
 
         async function fetchWeatherData(lat, lon, locationName) {
             
@@ -649,7 +623,6 @@
 
                         tooltipEl.style.display = 'block';
                         
-                        // Positioning updated for scrolling container support
                         const wrapperRect = wrapper.getBoundingClientRect();
                         const mouseX = e.clientX - wrapperRect.left;
                         const mouseY = e.clientY - wrapperRect.top;
