@@ -1,10 +1,21 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
-  <!-- Sun -->
-  <circle cx="32" cy="32" r="18" fill="#FDB813"></circle>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Meteogram">
+  <rect width="64" height="64" rx="9" fill="#0e1620"/>
 
-  <!-- Chart line -->
-  <polyline points="14,40 26,30 36,34 50,20" fill="none" stroke="#1565C0" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"></polyline>
+  <!-- Night block, echoing the twilight shading on the charts -->
+  <rect x="8" y="8" width="17" height="48" fill="#060c16" opacity="0.85"/>
+  <rect x="49" y="8" width="7" height="48" fill="#060c16" opacity="0.85"/>
 
-  <!-- Arrow -->
-  <polyline points="44,20 50,20 50,26" fill="none" stroke="#1565C0" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"></polyline>
+  <!-- Baseline and day divider -->
+  <path d="M8 50h48" stroke="#27343f" stroke-width="1.5"/>
+  <path d="M25 8v42M49 8v42" stroke="#27343f" stroke-width="1.25"/>
+
+  <!-- Dewpoint -->
+  <path d="M8 41c6 1 9 2 12 1s7-4 12-4 9 3 13 3 8-2 11-3"
+        fill="none" stroke="#4ade80" stroke-width="2.25"
+        stroke-linecap="round" stroke-linejoin="round"/>
+
+  <!-- Temperature -->
+  <path d="M8 34c6 0 8-6 13-12s9-6 14 1 8 13 12 12 5-4 9-6"
+        fill="none" stroke="#ff6f4d" stroke-width="3"
+        stroke-linecap="round" stroke-linejoin="round"/>
 </svg>
