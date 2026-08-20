@@ -1,666 +1,122 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="dark">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>NWS 7-Day Forecast Dashboard</title>
-    
-    <link rel="icon" href="favicon.svg" type="image/svg+xml">
-    
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <style>
-        body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background-color: #f0f2f5;
-            margin: 0;
-            padding: 20px 10px;
-        }
-        .dashboard-container {
-            width: 100%;
-            max-width: 1200px;
-            margin: auto;
-            background: white;
-            border-radius: 12px;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
-            overflow: hidden;
-            padding: 20px 0;
-            position: relative; 
-        }
-        .controls-container {
-            text-align: center;
-            margin: 0 20px 20px 20px;
-            padding: 15px;
-            background: #f8f9fa;
-            border-radius: 8px;
-            border: 1px solid #e9ecef;
-        }
-        .controls {
-            display: flex;
-            justify-content: center;
-            align-items: flex-start;
-        }
-        
-        .search-wrapper { position: relative; display: inline-block; text-align: left; width: 100%; max-width: 320px;}
-        .controls input { padding: 8px 12px; border: 1px solid #ced4da; border-radius: 4px; width: 100%; box-sizing: border-box; font-size: 14px; }
-        #suggestionsList {
-            position: absolute; top: 100%; left: 0; right: 0; background: white; border: 1px solid #ced4da;
-            border-radius: 4px; z-index: 1000; list-style: none; padding: 0; margin: 4px 0 0 0;
-            max-height: 250px; overflow-y: auto; display: none; box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-        }
-        #suggestionsList li { padding: 10px 12px; cursor: pointer; border-bottom: 1px solid #f0f2f5; font-size: 14px; color: #333; }
-        #suggestionsList li:hover { background-color: #e9ecef; }
-        .instructions { font-size: 12px; color: #6c757d; margin-top: 12px; }
-        
-        h2 { text-align: center; color: #333; margin-top: 0; margin-bottom: 5px; }
-        #gridSubtitle { text-align: center; color: #666; font-size: 14px; margin-bottom: 15px; font-weight: 500;}
-        
-        /* DUAL-PANEL CURRENT CONDITIONS BLOCK */
-        #currentConditions {
-            display: none; 
-            position: relative; 
-            justify-content: center; align-items: stretch; gap: 10px;
-            margin: 0 20px 20px 20px; padding: 35px 20px 20px 20px;
-            background: linear-gradient(135deg, #fdfbfb 0%, #ebedee 100%);
-            border-radius: 8px; border: 1px solid #e9ecef;
-            box-shadow: inset 0 0 10px rgba(0,0,0,0.02);
-        }
-        .cc-label {
-            position: absolute; top: 12px; left: 0; width: 100%; text-align: center; font-size: 11px; 
-            color: #6c757d; text-transform: uppercase; font-weight: 700; letter-spacing: 1px;
-        }
-        .cc-panel { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; width: 100%; }
-        .cc-panel-title { font-size: 11px; color: #adb5bd; font-weight: 600; margin-bottom: 15px; text-transform: uppercase; letter-spacing: 0.5px; text-align: center; }
-        .cc-panel-content { display: flex; align-items: center; justify-content: center; gap: 15px; width: 100%; }
-        .cc-divider { width: 2px; background-color: #dee2e6; margin: 0 15px; border-radius: 2px;}
-        
-        .cc-icon { width: 65px; height: 65px; border-radius: 10px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); background: white;}
-        .cc-temp { font-size: 42px; font-weight: bold; color: #212529; letter-spacing: -1px; min-width: 90px; text-align: center;}
-        .cc-details-col { display: flex; flex-direction: column; justify-content: center; border-left: 2px solid #dee2e6; padding-left: 15px; }
-        .cc-desc { font-size: 16px; font-weight: 600; color: #0d6efd; margin-bottom: 4px; }
-        .cc-metric { font-size: 13px; color: #495057; }
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark light">
+<title>Meteogram</title>
+<meta name="description" content="A seven-day hourly meteogram built on National Weather Service gridded forecast data, with every source named.">
 
-        /* SCROLLABLE CHART CONTAINER FOR MOBILE */
-        .chart-scroll-container {
-            width: 100%;
-            overflow-x: auto;
-            -webkit-overflow-scrolling: touch; 
-        }
-        #chartMasterWrapper {
-            position: relative;
-            min-width: 900px; 
-            padding: 0 20px;
-            cursor: crosshair;
-        }
-        .chart-wrapper { position: relative; }
-        
-        #customTooltip {
-            position: absolute; background: rgba(255, 255, 255, 0.95); border: 1px solid #ccc; padding: 12px; border-radius: 6px;
-            pointer-events: none; display: none; z-index: 20; box-shadow: 0 4px 8px rgba(0,0,0,0.15); font-size: 13px; min-width: 180px;
-        }
-        #customTooltip .tt-header { font-weight: bold; margin-bottom: 8px; border-bottom: 1px solid #eee; padding-bottom: 4px; color: #333;}
-        #customTooltip .tt-row { display: flex; justify-content: space-between; margin-bottom: 4px; }
-        #customTooltip .tt-color { display: inline-block; width: 10px; height: 10px; margin-right: 6px; border-radius: 2px;}
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="styles.css">
 
-        .footer { text-align: center; margin-top: 20px; font-size: 13px; color: #6c757d; }
-        .footer a { color: #0d6efd; text-decoration: none; }
-        .footer a:hover { text-decoration: underline; }
+<link rel="preconnect" href="https://api.weather.gov" crossorigin>
+<link rel="dns-prefetch" href="https://api.open-meteo.com">
 
-        /* --- RESPONSIVE MEDIA QUERIES FOR MOBILE PHONES --- */
-        @media (max-width: 768px) {
-            .controls {
-                flex-direction: column;
-                align-items: center;
-            }
-            .search-wrapper { max-width: 100%; }
-            
-            #currentConditions {
-                flex-direction: column;
-                padding: 40px 15px 15px 15px;
-                gap: 20px;
-            }
-            .cc-divider {
-                width: 100%;
-                height: 2px;
-                margin: 5px 0;
-            }
-        }
-    </style>
+<script
+  src="https://cdn.jsdelivr.net/npm/chart.js@4.5.1/dist/chart.umd.js"
+  integrity="sha384-hfkuqrKeWFmnTMWN31VWyoe8xgdTADD11kgxmdpx2uyE6j5Az5uZq6u6AKYYmAOw"
+  crossorigin="anonymous"
+  defer></script>
+<script type="module" src="js/app.js"></script>
 </head>
-<body>
 
-    <div class="dashboard-container">
-        <h2>7-Day NWS Graphical Forecast</h2>
-        <div id="gridSubtitle">Loading location data...</div>
-        
-        <div class="controls-container">
-            <div class="controls">
-                <div class="search-wrapper">
-                    <input type="text" id="locationInput" placeholder="Enter City or Zip Code" autocomplete="off" value="Washington, D.C.">
-                    <ul id="suggestionsList"></ul>
-                </div>
-            </div>
-            <div class="instructions">Type a city, postal code, or airport code and select it from the dropdown list.</div>
-        </div>
-        
-        <div id="currentConditions"></div>
-        
-        <div class="chart-scroll-container">
-            <div id="chartMasterWrapper">
-                <div id="customTooltip"></div>
-                <div class="chart-wrapper"><canvas id="topChart" height="390"></canvas></div>
-                <div class="chart-wrapper" style="margin-top: -10px;"><canvas id="middleChart" height="180"></canvas></div>
-                <div class="chart-wrapper" style="margin-top: -10px;"><canvas id="bottomChart" height="180"></canvas></div>
-            </div>
-        </div>
-        
-        <div class="footer">
-            Data provided by the <a href="https://www.weather.gov/documentation/services-web-api" target="_blank">National Weather Service API</a>. Geocoding by Open-Meteo.
-        </div>
+<body>
+<main class="console">
+
+  <header class="nameplate">
+    <div class="nameplate__identity">
+      <p class="eyebrow">Seven-day meteogram</p>
+      <h1 class="nameplate__place" id="place">Loading</h1>
+      <p class="nameplate__coords" id="coords"></p>
     </div>
 
-    <script>
-        let charts = [];
-        
-        const searchInput = document.getElementById('locationInput');
-        const suggestionsList = document.getElementById('suggestionsList');
-        let debounceTimer;
+    <div class="nameplate__tools">
+      <div class="search">
+        <label class="visually-hidden" for="searchInput">Location</label>
+        <input
+          class="search__input"
+          id="searchInput"
+          type="search"
+          placeholder="City, postal code, or airport"
+          autocomplete="off"
+          role="combobox"
+          aria-expanded="false"
+          aria-controls="searchResults">
+        <ul class="search__results" id="searchResults" role="listbox" aria-label="Location matches"></ul>
+      </div>
 
-        searchInput.addEventListener('input', () => {
-            clearTimeout(debounceTimer);
-            const query = searchInput.value;
-            if(query.length < 2) { suggestionsList.style.display = 'none'; return; }
-            
-            debounceTimer = setTimeout(async () => {
-                try {
-                    const res = await fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(query)}&count=5&language=en&format=json`);
-                    const data = await res.json();
-                    
-                    if(data.results && data.results.length > 0) {
-                        suggestionsList.innerHTML = '';
-                        data.results.forEach(item => {
-                            const li = document.createElement('li');
-                            const adminName = item.admin1 ? `, ${item.admin1}` : '';
-                            const fullName = `${item.name}${adminName} (${item.countryCode})`;
-                            
-                            li.innerText = fullName;
-                            li.onclick = () => {
-                                searchInput.value = `${item.name}${adminName}`;
-                                suggestionsList.style.display = 'none';
-                                fetchWeatherData(item.latitude, item.longitude, searchInput.value);
-                            };
-                            suggestionsList.appendChild(li);
-                        });
-                        suggestionsList.style.display = 'block';
-                    } else { suggestionsList.style.display = 'none'; }
-                } catch (e) { console.error("Autofill error:", e); }
-            }, 300); 
-        });
+      <button class="btn" id="unitToggle" type="button">°F · kt</button>
+      <button class="btn" id="themeToggle" type="button">Light</button>
+    </div>
+  </header>
 
-        document.addEventListener('click', (e) => {
-            if (e.target !== searchInput) suggestionsList.style.display = 'none';
-        });
+  <div class="status" id="status" role="status" aria-live="polite">
+    <span id="statusText">Loading forecast</span>
+    <span class="status__detail" id="statusDetail"></span>
+    <div class="status__action" id="statusAction"></div>
+  </div>
 
-        async function fetchWeatherData(lat, lon, locationName) {
-            
-            localStorage.setItem('savedLat', lat);
-            localStorage.setItem('savedLon', lon);
-            localStorage.setItem('savedLocationName', locationName);
+  <div id="content" hidden>
 
-            try {
-                document.getElementById('gridSubtitle').innerText = "Fetching NWS Data...";
-                document.getElementById('currentConditions').style.display = 'none';
+    <section class="hazards" id="hazards" data-has-alerts="false" aria-label="Active hazards"></section>
 
-                const pointResponse = await fetch(`https://api.weather.gov/points/${lat},${lon}`);
-                if (!pointResponse.ok) throw new Error("Invalid coordinates for NWS.");
-                const pointData = await pointResponse.json();
-                
-                const city = pointData.properties.relativeLocation.properties.city;
-                const state = pointData.properties.relativeLocation.properties.state;
-                document.getElementById('gridSubtitle').innerText = `${city}, ${state} | NWS Grid: ${pointData.properties.gridId} ${pointData.properties.gridX},${pointData.properties.gridY}`;
-                
-                const forecastPromise = fetch(pointData.properties.forecast).then(r => r.json());
-                const gridPromise = fetch(pointData.properties.forecastGridData).then(r => r.json());
-                
-                const metarPromise = (async () => {
-                    try {
-                        const stRes = await fetch(pointData.properties.observationStations);
-                        const stData = await stRes.json();
-                        if (!stData.features || stData.features.length === 0) return null;
-                        
-                        const nearestStation = stData.features[0];
-                        let nearestObs = null;
-                        try {
-                            const nRes = await fetch(`${nearestStation.id}/observations/latest`);
-                            const nData = await nRes.json();
-                            nearestObs = nData.properties;
-                        } catch (e) { console.error(e); }
+    <section class="section">
+      <div class="section__head">
+        <h2 class="eyebrow">Live observations</h2>
+        <p class="section__note" id="observedNote"></p>
+      </div>
+      <div class="readouts" id="readouts"></div>
+    </section>
 
-                        let airportStation = null;
-                        let airportObs = null;
+    <section class="section">
+      <div class="section__head">
+        <h2 class="eyebrow">Forecast</h2>
+        <p class="section__note" id="forecastNote"></p>
+      </div>
 
-                        for (let i = 0; i < Math.min(10, stData.features.length); i++) {
-                            const station = stData.features[i];
-                            if (station.id === nearestStation.id && nearestObs && !nearestObs.textDescription) continue;
+      <div class="plot-scroll">
+        <div class="plot-frame" id="plotFrame">
+          <div class="probe" id="probe" data-visible="false" aria-hidden="true"></div>
+          <div class="day-rail" id="dayRail"></div>
+          <div class="plot"><canvas id="plotTemp" height="230" aria-label="Temperature, feels-like temperature, and dewpoint"></canvas></div>
+          <div class="plot"><canvas id="plotPrecip" height="140" aria-label="Precipitation chance and hourly amount"></canvas></div>
+          <div class="plot"><canvas id="plotCloud" height="130" aria-label="Sky cover and relative humidity"></canvas></div>
+          <div class="plot"><canvas id="plotWind" height="155" aria-label="Wind speed, gusts, and direction"></canvas></div>
+        </div>
+      </div>
+    </section>
 
-                            try {
-                                const obsRes = await fetch(`${station.id}/observations/latest`);
-                                if (!obsRes.ok) continue;
-                                const obsData = await obsRes.json();
-                                const obs = obsData.properties;
+    <section class="section models" id="models" data-open="false">
+      <div class="section__head">
+        <h2 class="eyebrow">Model spread</h2>
+        <button class="btn" id="modelsToggle" type="button" aria-expanded="false" aria-controls="modelsBody">Show</button>
+      </div>
+      <div class="models__body" id="modelsBody">
+        <p class="section__note" id="modelsNote" style="text-align:left"></p>
+        <div class="models__plot"><canvas id="modelsPlot" aria-label="Temperature forecast from four numerical weather models"></canvas></div>
+        <div class="models__legend" id="modelsLegend"></div>
+      </div>
+    </section>
 
-                                if (obs.textDescription && obs.relativeHumidity?.value !== null) {
-                                    airportStation = station;
-                                    airportObs = obs;
-                                    break; 
-                                }
-                            } catch (e) {}
-                        }
+    <section class="section">
+      <details class="disclosure" id="discussion">
+        <summary>
+          <h2 class="eyebrow">Area forecast discussion</h2>
+          <span class="disclosure__hint">Forecaster reasoning</span>
+        </summary>
+        <p class="section__note" id="discussionNote" style="text-align:left"></p>
+        <div class="discussion__text" id="discussionText"></div>
+      </details>
+    </section>
 
-                        return { 
-                            nearest: nearestObs ? { station: nearestStation.properties, obs: nearestObs } : null,
-                            airport: airportObs ? { station: airportStation.properties, obs: airportObs } : null
-                        };
-                    } catch (e) {
-                        console.error("METAR fetch failed:", e);
-                        return null; 
-                    }
-                })();
+  </div>
 
-                const [forecastData, gridData, liveData] = await Promise.all([forecastPromise, gridPromise, metarPromise]);
+  <footer class="provenance">
+    <p class="eyebrow">Sources</p>
+    <dl id="provenanceList"></dl>
+  </footer>
 
-                if (liveData) {
-                    const ccDiv = document.getElementById('currentConditions');
-                    
-                    function processObs(obs) {
-                        const tempC = obs.temperature?.value;
-                        const tempF = tempC !== null && tempC !== undefined ? Math.round((tempC * 9/5) + 32) : '--';
-                        const rh = obs.relativeHumidity?.value;
-                        const humidity = rh !== null && rh !== undefined ? Math.round(rh) : '--';
-                        const windKmh = obs.windSpeed?.value;
-                        const windKts = windKmh !== null && windKmh !== undefined ? Math.round(windKmh * 0.539957) : '--';
-                        const windDirDeg = obs.windDirection?.value;
-                        const compassDirs = ["N","NNE","NE","ENE","E","ESE","SE","SSE","S","SSW","SW","WSW","W","WNW","NW","NNW"];
-                        const windDir = windDirDeg !== null && windDirDeg !== undefined ? compassDirs[Math.floor((windDirDeg / 22.5) + 0.5) % 16] : '';
-                        const windString = windKts !== '--' ? `${windKts} kts ${windDir}` : 'Calm';
-                        const iconUrl = obs.icon || 'https://api.weather.gov/icons/land/day/few?size=medium'; 
-                        const description = obs.textDescription || 'Conditions Not Reported';
-                        return { tempF, humidity, windString, iconUrl, description };
-                    }
-
-                    let html = `<div class="cc-label">Live Observations</div>`;
-                    
-                    if (liveData.nearest) {
-                        const n = processObs(liveData.nearest.obs);
-                        html += `
-                            <div class="cc-panel">
-                                <div class="cc-panel-title">Nearest Station: ${liveData.nearest.station.name} (${liveData.nearest.station.stationIdentifier})</div>
-                                <div class="cc-panel-content">
-                                    <img src="${n.iconUrl}" alt="${n.description}" class="cc-icon">
-                                    <div class="cc-temp">${n.tempF}°F</div>
-                                    <div class="cc-details-col">
-                                        <div class="cc-desc">${n.description}</div>
-                                        <div class="cc-metric"><b>Wind:</b> ${n.windString}</div>
-                                        <div class="cc-metric"><b>Humidity:</b> ${n.humidity}%</div>
-                                    </div>
-                                </div>
-                            </div>
-                        `;
-                    }
-
-                    if (liveData.airport && (!liveData.nearest || liveData.airport.station.stationIdentifier !== liveData.nearest.station.stationIdentifier)) {
-                        const a = processObs(liveData.airport.obs);
-                        if(liveData.nearest) html += `<div class="cc-divider"></div>`;
-                        html += `
-                            <div class="cc-panel">
-                                <div class="cc-panel-title">Nearest Airport METAR: ${liveData.airport.station.name} (${liveData.airport.station.stationIdentifier})</div>
-                                <div class="cc-panel-content">
-                                    <img src="${a.iconUrl}" alt="${a.description}" class="cc-icon">
-                                    <div class="cc-temp">${a.tempF}°F</div>
-                                    <div class="cc-details-col">
-                                        <div class="cc-desc">${a.description}</div>
-                                        <div class="cc-metric"><b>Wind:</b> ${a.windString}</div>
-                                        <div class="cc-metric"><b>Humidity:</b> ${a.humidity}%</div>
-                                    </div>
-                                </div>
-                            </div>
-                        `;
-                    }
-                    
-                    ccDiv.innerHTML = html;
-                    ccDiv.style.display = 'flex';
-                }
-
-                const dailySummaries = {};
-                forecastData.properties.periods.forEach(p => {
-                    const dateKey = new Date(p.startTime).toLocaleDateString('en-US');
-                    if (!dailySummaries[dateKey] || p.isDaytime) {
-                        dailySummaries[dateKey] = { text: p.shortForecast, iconUrl: p.icon };
-                    }
-                });
-
-                const loadedIcons = {};
-                await Promise.all(Object.keys(dailySummaries).map(dateKey => {
-                    return new Promise(resolve => {
-                        const img = new Image();
-                        img.crossOrigin = "anonymous";
-                        img.onload = () => { loadedIcons[dateKey] = img; resolve(); };
-                        img.onerror = () => { resolve(); }; 
-                        img.src = dailySummaries[dateKey].iconUrl;
-                    });
-                }));
-
-                const labels = [], temperatures = [], apparentTemps = [], precipChances = [];
-                const humidities = [], skyCovers = [], windSpeeds = [], windGusts = [];
-                const dailyExtremes = {};
-
-                const tempMap = createHourlyMap(gridData.properties.temperature?.values);
-                const appTempMap = createHourlyMap(gridData.properties.apparentTemperature?.values);
-                const precipMap = createHourlyMap(gridData.properties.probabilityOfPrecipitation?.values);
-                const rhMap = createHourlyMap(gridData.properties.relativeHumidity?.values);
-                const skyMap = createHourlyMap(gridData.properties.skyCover?.values);
-                const windMap = createHourlyMap(gridData.properties.windSpeed?.values);
-                const gustMap = createHourlyMap(gridData.properties.windGust?.values);
-
-                const now = new Date();
-                now.setMinutes(0, 0, 0); 
-                now.setMilliseconds(0);
-                const startTime = now.getTime();
-
-                const midnight = new Date(now);
-                midnight.setHours(0, 0, 0, 0);
-                let currentPadTime = midnight.getTime();
-
-                while (currentPadTime < startTime) {
-                    labels.push(currentPadTime);
-                    temperatures.push(null); apparentTemps.push(null); precipChances.push(null);
-                    humidities.push(null); skyCovers.push(null); windSpeeds.push(null); windGusts.push(null);
-                    currentPadTime += 60 * 60 * 1000; 
-                }
-
-                for(let i = 0; i < 168; i++) {
-                    const t = startTime + (i * 60 * 60 * 1000);
-                    labels.push(t);
-                    
-                    const tempC = tempMap[t], appC = appTempMap[t];
-                    const tempF = (tempC !== undefined && tempC !== null) ? Math.round((tempC * 9/5) + 32) : null;
-                    temperatures.push(tempF);
-                    apparentTemps.push((appC !== undefined && appC !== null) ? Math.round((appC * 9/5) + 32) : null);
-                    
-                    precipChances.push(precipMap[t] || 0);
-                    humidities.push(rhMap[t] || null);
-                    skyCovers.push(skyMap[t] || 0);
-
-                    const wKm = windMap[t], gKm = gustMap[t];
-                    windSpeeds.push((wKm !== undefined && wKm !== null) ? Math.round(wKm * 0.539957) : null);
-                    windGusts.push((gKm !== undefined && gKm !== null) ? Math.round(gKm * 0.539957) : null);
-
-                    const dateKey = new Date(t).toLocaleDateString('en-US');
-                    if (!dailyExtremes[dateKey]) dailyExtremes[dateKey] = { min: 999, max: -999 };
-                    if (tempF !== null) {
-                        if (tempF > dailyExtremes[dateKey].max) dailyExtremes[dateKey].max = tempF;
-                        if (tempF < dailyExtremes[dateKey].min) dailyExtremes[dateKey].min = tempF;
-                    }
-                }
-
-                let lastTimestamp = labels[labels.length - 1];
-                let lastDateObj = new Date(lastTimestamp);
-                
-                while (lastDateObj.getHours() < 23) {
-                    lastTimestamp += 60 * 60 * 1000;
-                    labels.push(lastTimestamp);
-                    temperatures.push(null); apparentTemps.push(null); precipChances.push(null);
-                    humidities.push(null); skyCovers.push(null); windSpeeds.push(null); windGusts.push(null);
-                    lastDateObj = new Date(lastTimestamp);
-                }
-
-                initializeCharts(labels, temperatures, apparentTemps, precipChances, humidities, skyCovers, windSpeeds, windGusts, dailyExtremes, dailySummaries, loadedIcons);
-
-            } catch (error) {
-                console.error("Error fetching NWS data:", error);
-                alert("Failed to load weather data. See console.");
-                document.getElementById('gridSubtitle').innerText = "Data Fetch Error";
-            }
-        }
-
-        function createHourlyMap(gridValues) {
-            const map = {};
-            if (!gridValues) return map;
-            gridValues.forEach(item => {
-                const parts = item.validTime.split('/');
-                const startTime = new Date(parts[0]).getTime();
-                let hours = 0;
-                const dMatch = parts[1].match(/(\d+)D/);
-                const hMatch = parts[1].match(/(\d+)H/);
-                if (dMatch) hours += parseInt(dMatch[1]) * 24;
-                if (hMatch) hours += parseInt(hMatch[1]);
-                hours = hours || 1;
-                for (let i = 0; i < hours; i++) map[startTime + (i * 60 * 60 * 1000)] = item.value;
-            });
-            return map;
-        }
-
-        function wrapText(ctx, text, x, y, maxWidth, lineHeight) {
-            const words = text.split(' ');
-            let line = '';
-            for (let n = 0; n < words.length; n++) {
-                const testLine = line + words[n] + ' ';
-                const metrics = ctx.measureText(testLine);
-                if (metrics.width > maxWidth && n > 0) {
-                    ctx.fillText(line, x, y);
-                    line = words[n] + ' ';
-                    y += lineHeight;
-                } else {
-                    line = testLine;
-                }
-            }
-            ctx.fillText(line, x, y);
-        }
-
-        function initializeCharts(labels, temperatures, apparentTemps, precipChances, humidities, skyCovers, windSpeeds, windGusts, dailyExtremes, dailySummaries, loadedIcons) {
-            charts.forEach(c => c.destroy());
-            charts = [];
-            const forceAxisWidth = (scale) => { scale.width = 55; };
-
-            const crosshairPlugin = {
-                id: 'crosshairPlugin',
-                afterDraw: (chart) => {
-                    const activeEls = chart.getActiveElements();
-                    if (activeEls && activeEls.length > 0) {
-                        const x = activeEls[0].element.x;
-                        const ctx = chart.ctx;
-                        ctx.save();
-                        ctx.beginPath();
-                        ctx.moveTo(x, chart.chartArea.top);
-                        ctx.lineTo(x, chart.chartArea.bottom);
-                        ctx.lineWidth = 1;
-                        ctx.strokeStyle = 'rgba(0, 0, 0, 0.4)';
-                        ctx.stroke();
-                        ctx.restore();
-                    }
-                }
-            };
-
-            const createDayShadingPlugin = (chartId, isTopChart) => ({
-                id: 'dayShading_' + chartId,
-                beforeDraw: (chart) => {
-                    const { ctx, chartArea } = chart;
-                    if (!chartArea) return;
-                    const meta = chart.getDatasetMeta(0);
-                    if (!meta || meta.data.length === 0) return;
-                    ctx.save();
-                    
-                    let blockStartDate = new Date(chart.data.labels[0]);
-                    let shade = false;
-                    let startX = chartArea.left;
-                    const topBoundary = isTopChart ? chartArea.top - 180 : chartArea.top;
-
-                    for (let i = 1; i < chart.data.labels.length; i++) {
-                        let date = new Date(chart.data.labels[i]);
-                        
-                        if (date.getDate() !== blockStartDate.getDate() || i === chart.data.labels.length - 1) {
-                            let endX = i === chart.data.labels.length - 1 ? chartArea.right : meta.data[i].x;
-                            
-                            if (shade) {
-                                ctx.fillStyle = 'rgba(0, 0, 0, 0.04)';
-                                ctx.fillRect(startX, topBoundary, endX - startX, chartArea.bottom - topBoundary);
-                            }
-                            
-                            if (isTopChart) {
-                                const midX = startX + (endX - startX) / 2;
-                                const colWidth = endX - startX - 10; 
-                                const dateKey = blockStartDate.toLocaleDateString('en-US');
-                                ctx.textAlign = 'center';
-
-                                ctx.fillStyle = '#333'; ctx.font = 'bold 13px sans-serif';
-                                ctx.fillText(blockStartDate.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }), midX, chartArea.top - 150);
-
-                                const icon = loadedIcons[dateKey];
-                                if (icon) ctx.drawImage(icon, midX - 25, chartArea.top - 140, 50, 50);
-
-                                const extremes = dailyExtremes[dateKey];
-                                if (extremes && extremes.min !== 999) {
-                                    ctx.fillStyle = '#111'; ctx.font = 'bold 13px sans-serif';
-                                    ctx.fillText(`${extremes.max}° / ${extremes.min}°`, midX, chartArea.top - 80);
-                                }
-
-                                const summary = dailySummaries[dateKey];
-                                if (summary) {
-                                    ctx.fillStyle = '#666'; ctx.font = '11px sans-serif';
-                                    wrapText(ctx, summary.text, midX, chartArea.top - 60, colWidth, 13);
-                                }
-                            }
-                            startX = endX; 
-                            blockStartDate = date; 
-                            shade = !shade; 
-                        }
-                    }
-                    ctx.restore();
-                }
-            });
-
-            const sharedXScale = {
-                ticks: { callback: (v, i) => i % 6 === 0 ? `${new Date(labels[i]).getHours() % 12 || 12} ${new Date(labels[i]).getHours() >= 12 ? 'PM' : 'AM'}` : null, maxRotation: 0, color: '#888' },
-                grid: { drawOnChartArea: false }
-            };
-
-            const noTooltipConfig = { enabled: false };
-
-            charts.push(new Chart(document.getElementById('topChart'), {
-                type: 'line',
-                data: {
-                    labels,
-                    datasets: [
-                        { label: 'Temperature (°F)', data: temperatures, borderColor: 'rgba(219, 39, 39, 1)', backgroundColor: 'rgba(219, 39, 39, 0.05)', yAxisID: 'yTemp', fill: true, tension: 0.4, pointRadius: 0, pointHoverRadius: 5 },
-                        { label: 'Feels Like (°F)', data: apparentTemps, borderColor: 'rgba(230, 126, 34, 1)', borderDash: [5, 5], yAxisID: 'yTemp', fill: false, tension: 0.4, pointRadius: 0, pointHoverRadius: 5 },
-                        { label: 'Chance of Precip (%)', data: precipChances, borderColor: 'rgba(54, 162, 235, 1)', backgroundColor: 'rgba(54, 162, 235, 0.4)', yAxisID: 'yPrecip', fill: true, tension: 0.4, pointRadius: 0, pointHoverRadius: 5 }
-                    ]
-                },
-                options: {
-                    responsive: true, maintainAspectRatio: false, layout: { padding: { top: 180 } }, interaction: { mode: 'index', intersect: false },
-                    plugins: { tooltip: noTooltipConfig, legend: { position: 'top' } },
-                    scales: { x: { ...sharedXScale, ticks: { display: false } }, yTemp: { position: 'left', title: { display: true, text: 'Temp (°F)' }, afterFit: forceAxisWidth }, yPrecip: { position: 'right', min: 0, max: 100, title: { display: true, text: 'Precip (%)' }, grid: { display: false }, afterFit: forceAxisWidth } }
-                },
-                plugins: [createDayShadingPlugin('top', true), crosshairPlugin] 
-            }));
-
-            charts.push(new Chart(document.getElementById('middleChart'), {
-                type: 'line',
-                data: { labels, datasets: [
-                    { label: 'Relative Humidity (%)', data: humidities, borderColor: 'rgba(40, 167, 69, 1)', backgroundColor: 'rgba(40, 167, 69, 0.1)', yAxisID: 'yLeft', fill: false, tension: 0.4, pointRadius: 0, pointHoverRadius: 5 },
-                    { label: 'Sky Cover (%)', data: skyCovers, borderColor: 'rgba(150, 150, 150, 0.6)', backgroundColor: 'rgba(150, 150, 150, 0.3)', yAxisID: 'yLeft', fill: true, tension: 0.4, pointRadius: 0, pointHoverRadius: 5 }
-                ]},
-                options: { responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false }, plugins: { tooltip: noTooltipConfig, legend: { position: 'bottom' } }, scales: { x: { ...sharedXScale, ticks: { display: false } }, yLeft: { min: 0, max: 100, title: { display: true, text: 'Percent (%)' }, afterFit: forceAxisWidth }, yRight: { display: false, position: 'right', afterFit: forceAxisWidth } } },
-                plugins: [createDayShadingPlugin('middle', false), crosshairPlugin] 
-            }));
-
-            charts.push(new Chart(document.getElementById('bottomChart'), {
-                type: 'line',
-                data: { labels, datasets: [
-                    { label: 'Wind Speed (knots)', data: windSpeeds, borderColor: 'rgba(102, 51, 153, 1)', backgroundColor: 'rgba(102, 51, 153, 0.1)', yAxisID: 'yLeft', fill: true, tension: 0.4, pointRadius: 0, pointHoverRadius: 5 },
-                    { label: 'Wind Gust (knots)', data: windGusts, borderColor: 'rgba(102, 51, 153, 0.6)', borderDash: [5, 5], yAxisID: 'yLeft', fill: false, tension: 0.4, pointRadius: 0, pointHoverRadius: 5, spanGaps: false }
-                ]},
-                options: { responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false }, plugins: { tooltip: noTooltipConfig, legend: { position: 'bottom' } }, scales: { x: sharedXScale, yLeft: { suggestedMin: 0, title: { display: true, text: 'Speed (knots)' }, afterFit: forceAxisWidth }, yRight: { display: false, position: 'right', afterFit: forceAxisWidth } } },
-                plugins: [createDayShadingPlugin('bottom', false), crosshairPlugin] 
-            }));
-
-            const tooltipEl = document.getElementById('customTooltip');
-            const wrapper = document.getElementById('chartMasterWrapper');
-
-            charts.forEach(sourceChart => {
-                sourceChart.canvas.addEventListener('mousemove', (e) => {
-                    const points = sourceChart.getElementsAtEventForMode(e, 'index', { intersect: false }, true);
-                    
-                    if (points.length) {
-                        const index = points[0].index;
-                        
-                        if (sourceChart.data.datasets[0].data[index] === null) {
-                            tooltipEl.style.display = 'none';
-                            charts.forEach(tc => { tc.setActiveElements([]); tc.update(); });
-                            return;
-                        }
-
-                        charts.forEach(tc => {
-                            const activeEls = tc.data.datasets.map((_, dIdx) => ({ datasetIndex: dIdx, index: index }));
-                            tc.setActiveElements(activeEls);
-                            tc.update(); 
-                        });
-
-                        const dateObj = new Date(labels[index]);
-                        const timeString = dateObj.toLocaleString([], {weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute:'2-digit'});
-                        
-                        tooltipEl.innerHTML = `
-                            <div class="tt-header">${timeString}</div>
-                            <div class="tt-row"><span style="color:#333;"><span class="tt-color" style="background:rgba(219,39,39,1);"></span>Temp:</span> <b>${temperatures[index]} °F</b></div>
-                            <div class="tt-row"><span style="color:#333;"><span class="tt-color" style="background:rgba(230,126,34,1);"></span>Feels Like:</span> <b>${apparentTemps[index]} °F</b></div>
-                            <div class="tt-row"><span style="color:#333;"><span class="tt-color" style="background:rgba(54,162,235,1);"></span>Precip:</span> <b>${precipChances[index]} %</b></div>
-                            <hr style="border: 0; border-top: 1px solid #eee; margin: 6px 0;">
-                            <div class="tt-row"><span style="color:#333;"><span class="tt-color" style="background:rgba(40,167,69,1);"></span>Humidity:</span> <b>${humidities[index]} %</b></div>
-                            <div class="tt-row"><span style="color:#333;"><span class="tt-color" style="background:rgba(150,150,150,1);"></span>Sky Cover:</span> <b>${skyCovers[index]} %</b></div>
-                            <hr style="border: 0; border-top: 1px solid #eee; margin: 6px 0;">
-                            <div class="tt-row"><span style="color:#333;"><span class="tt-color" style="background:rgba(102,51,153,1);"></span>Wind:</span> <b>${windSpeeds[index]} kts</b></div>
-                            <div class="tt-row"><span style="color:#333;"><span class="tt-color" style="background:rgba(102,51,153,0.6);"></span>Gust:</span> <b>${windGusts[index]} kts</b></div>
-                        `;
-
-                        tooltipEl.style.display = 'block';
-                        
-                        const wrapperRect = wrapper.getBoundingClientRect();
-                        const mouseX = e.clientX - wrapperRect.left;
-                        const mouseY = e.clientY - wrapperRect.top;
-
-                        let ttLeft = mouseX + 15;
-                        if (ttLeft + tooltipEl.offsetWidth > wrapperRect.width - 10) {
-                            ttLeft = mouseX - tooltipEl.offsetWidth - 15; 
-                        }
-                        
-                        tooltipEl.style.left = ttLeft + 'px';
-                        tooltipEl.style.top = (mouseY > 200 ? mouseY - 100 : mouseY + 15) + 'px';
-
-                    } else { 
-                        tooltipEl.style.display = 'none';
-                        charts.forEach(tc => { tc.setActiveElements([]); tc.update(); });
-                    }
-                });
-                
-                sourceChart.canvas.addEventListener('mouseout', () => {
-                    tooltipEl.style.display = 'none';
-                    charts.forEach(tc => { tc.setActiveElements([]); tc.update(); });
-                });
-            });
-        }
-
-        window.onload = () => {
-            const savedLat = localStorage.getItem('savedLat');
-            const savedLon = localStorage.getItem('savedLon');
-            const savedName = localStorage.getItem('savedLocationName');
-            
-            if (savedLat && savedLon && savedName) { 
-                document.getElementById('locationInput').value = savedName; 
-                fetchWeatherData(savedLat, savedLon, savedName);
-            } else {
-                fetchWeatherData(38.8951, -77.0364, 'Washington, D.C.');
-            }
-        };
-
-    </script>
+</main>
 </body>
 </html>

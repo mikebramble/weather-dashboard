@@ -1,0 +1,14 @@
+{
+  "name": "weather-dashboard",
+  "version": "2.0.0",
+  "description": "Seven-day hourly meteogram built on National Weather Service gridded forecast data",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "test": "node test/solar.test.mjs && node test/grid.test.mjs && node test/app.test.mjs",
+    "serve": "python3 -m http.server 8000"
+  },
+  "devDependencies": {
+    "jsdom": "^27.0.0"
+  }
+}
