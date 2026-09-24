@@ -25,10 +25,10 @@ import {
   formatHour,
   formatDayLabel,
   formatFull,
+  formatClock,
   zoneAbbrev,
   relativeAge,
 } from './time.js';
-import { sunriseSunset, moonPhase } from './solar.js';
 import { Units, formatPercent, formatNumber } from './units.js';
 import {
   buildCharts,
@@ -36,10 +36,20 @@ import {
   readTheme,
   pixelFor,
   computeTwilightBands,
+  panelSpec,
+  plotMisalignment,
 } from './charts.js';
+import { sunCard, moonCard } from './sky.js';
 
 const HOUR = 3600 * 1000;
+const MINUTE = 60 * 1000;
 const DAYS = 7;
+
+// Background refresh. The NWS grid is typically reissued hourly; checking
+// every 20 minutes keeps a page left open on a second monitor current without
+// being a nuisance to the API.
+const REFRESH_EVERY = 20 * MINUTE;
+const REFRESH_RETRY = 5 * MINUTE;
 
 // A deliberately neutral placeholder, shown only until the visitor picks a
 // location. Do not replace this with your own coordinates: this file is served
@@ -65,15 +75,25 @@ const el = {
   searchResults: document.getElementById('searchResults'),
   unitToggle: document.getElementById('unitToggle'),
   themeToggle: document.getElementById('themeToggle'),
+  refreshBtn: document.getElementById('refreshBtn'),
+  freshness: document.getElementById('freshness'),
 
   hazards: document.getElementById('hazards'),
   readouts: document.getElementById('readouts'),
   observedNote: document.getElementById('observedNote'),
+  sky: document.getElementById('sky'),
 
   forecastNote: document.getElementById('forecastNote'),
   plotFrame: document.getElementById('plotFrame'),
   dayRail: document.getElementById('dayRail'),
+  dayDetail: document.getElementById('dayDetail'),
   probe: document.getElementById('probe'),
+  legends: {
+    temp: document.getElementById('legendTemp'),
+    precip: document.getElementById('legendPrecip'),
+    cloud: document.getElementById('legendCloud'),
+    wind: document.getElementById('legendWind'),
+  },
   canvases: {
     temp: document.getElementById('plotTemp'),
     precip: document.getElementById('plotPrecip'),
@@ -105,10 +125,32 @@ let modelChart = null;
 let renderContext = null;
 let inflight = null;
 
+/** When the current payload was fetched, and when a refresh last failed. */
+let fetchedAt = null;
+let refreshFailedAt = null;
+
+/** Series the visitor has switched off in the legends, as "panel.key". */
+const hiddenSeries = new Set(readJSON('wx.hidden', []));
+
+/** Selected range for the Sun card's sparkline. */
+let sunRange = localStorage.getItem('wx.sunRange') || '2w';
+
+function readJSON(key, fallback) {
+  try {
+    const v = JSON.parse(localStorage.getItem(key));
+    return v ?? fallback;
+  } catch {
+    return fallback;
+  }
+}
+
 // --- Theme ----------------------------------------------------------------
 
 function applyTheme(next) {
-  const theme = next || localStorage.getItem('wx.theme') || 'dark';
+  const theme =
+    next ||
+    localStorage.getItem('wx.theme') ||
+    (window.matchMedia?.('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
   document.documentElement.dataset.theme = theme;
   el.themeToggle.textContent = theme === 'dark' ? 'Light' : 'Dark';
   el.themeToggle.setAttribute(
@@ -236,12 +278,24 @@ el.searchInput.addEventListener('keydown', (e) => {
 
 // --- Loading --------------------------------------------------------------
 
-async function load(lat, lon, name) {
+/**
+ * Fetch everything for a location and render it.
+ *
+ * With `silent`, this is a background refresh: the current page stays up
+ * while the request runs, and a failure leaves it in place with a note rather
+ * than replacing it with an error screen.
+ */
+async function load(lat, lon, name, { silent = false } = {}) {
   inflight?.abort();
   inflight = new AbortController();
   const { signal } = inflight;
 
-  showStatus('Loading forecast', `${lat.toFixed(4)}, ${lon.toFixed(4)}`);
+  if (silent) {
+    el.freshness.dataset.state = 'refreshing';
+    el.freshness.textContent = 'Refreshing…';
+  } else {
+    showStatus('Loading forecast', `${lat.toFixed(4)}, ${lon.toFixed(4)}`);
+  }
 
   try {
     const point = await getPoint(lat, lon, { signal });
@@ -261,16 +315,25 @@ async function load(lat, lon, name) {
     ]);
 
     payload = { lat, lon, name, point, grid, forecast, observations, alerts, air };
+    fetchedAt = Date.now();
+    refreshFailedAt = null;
 
     persist(lat, lon, name);
     hideStatus();
     render();
+    updateFreshness();
 
     // Non-blocking extras.
     loadDiscussion(point.office, signal);
   } catch (error) {
     if (error.name === 'AbortError') return;
     console.error(error);
+
+    if (silent && payload) {
+      refreshFailedAt = Date.now();
+      updateFreshness();
+      return;
+    }
 
     const outside = error.status === 404;
     showStatus(
@@ -467,6 +530,7 @@ function render() {
   renderHeader(name, lat, lon, point, timeZone);
   renderHazards(alerts, timeZone);
   renderObservations(observations, air, lat, lon, timeZone);
+  renderSky(lat, lon, timeZone);
   renderDayRail(days, labels, timeZone);
   renderCharts(series, labels, days, timeZone, theme, lat, lon);
   renderProvenance(point, grid, forecast, observations, air, timeZone);
@@ -559,7 +623,6 @@ function renderObservations(observations, air, lat, lon, timeZone) {
   }
 
   if (air) el.readouts.appendChild(airCard(air));
-  el.readouts.appendChild(skyCard(lat, lon, timeZone));
 
   el.observedNote.textContent = primary
     ? `Coalesced from the last 6 reports at ${considered} nearby station${considered === 1 ? '' : 's'}`
@@ -585,6 +648,7 @@ function observationCard(entry, lat, lon, role) {
   const age = document.createElement('span');
   age.className = 'readout__age';
   age.textContent = obs.newest ? relativeAge(obs.newest, now) : '—';
+  if (obs.newest) age.dataset.ageFrom = obs.newest;
   age.dataset.stale = obs.newest && now - obs.newest > 2 * HOUR ? 'true' : 'false';
 
   head.append(source, age);
@@ -679,6 +743,7 @@ function airCard(air) {
   const age = document.createElement('span');
   age.className = 'readout__age';
   age.textContent = relativeAge(air.time);
+  age.dataset.ageFrom = air.time;
   head.append(source, age);
 
   const primary = document.createElement('div');
@@ -714,52 +779,6 @@ function airCard(air) {
   return card;
 }
 
-function skyCard(lat, lon, timeZone) {
-  const card = document.createElement('article');
-  card.className = 'readout';
-
-  const head = document.createElement('div');
-  head.className = 'readout__head';
-  const source = document.createElement('span');
-  source.className = 'readout__source';
-  source.textContent = 'Sun and moon · computed';
-  head.appendChild(source);
-
-  const todayStart = startOfLocalDay(Date.now(), timeZone);
-  const { sunrise, sunset } = sunriseSunset(todayStart, lat, lon);
-  const moon = moonPhase(Date.now());
-
-  const primary = document.createElement('div');
-  primary.className = 'readout__primary';
-
-  const value = document.createElement('div');
-  value.className = 'readout__value readout__value--small';
-  if (sunrise && sunset) {
-    const daylight = sunset - sunrise;
-    const h = Math.floor(daylight / HOUR);
-    const m = Math.round((daylight % HOUR) / 60000);
-    value.textContent = `${h}h ${String(m).padStart(2, '0')}m`;
-  } else {
-    value.textContent = sunrise || sunset ? '—' : '24h';
-  }
-  primary.appendChild(value);
-
-  const caption = document.createElement('div');
-  caption.className = 'readout__caption';
-  caption.textContent = 'of daylight today';
-  primary.appendChild(caption);
-
-  const fields = document.createElement('div');
-  fields.className = 'readout__fields';
-  addField(fields, 'Sunrise', sunrise ? formatClock(sunrise, timeZone) : 'None');
-  addField(fields, 'Sunset', sunset ? formatClock(sunset, timeZone) : 'None');
-  addField(fields, 'Moon', `${Math.round(moon.illumination * 100)}%`);
-  addField(fields, 'Phase', moon.name);
-
-  card.append(head, primary, fields);
-  return card;
-}
-
 function addField(container, label, value, extraClass) {
   const wrap = document.createElement('div');
   wrap.className = 'field';
@@ -777,12 +796,38 @@ function addField(container, label, value, extraClass) {
   container.appendChild(wrap);
 }
 
-function formatClock(ms, timeZone) {
-  return new Intl.DateTimeFormat('en-US', {
-    timeZone,
-    hour: 'numeric',
-    minute: '2-digit',
-  }).format(new Date(ms));
+// --- Sky ------------------------------------------------------------------
+
+const skyDrawers = new WeakMap();
+const skyResize = new ResizeObserver((entries) => {
+  for (const entry of entries) skyDrawers.get(entry.target)?.();
+});
+
+function renderSky(lat, lon, timeZone) {
+  skyResize.disconnect();
+  el.sky.innerHTML = '';
+
+  const cards = [
+    sunCard({
+      lat,
+      lon,
+      timeZone,
+      range: sunRange,
+      onRange: (r) => {
+        sunRange = r;
+        localStorage.setItem('wx.sunRange', r);
+      },
+    }),
+    moonCard({ lat, lon, timeZone }),
+  ];
+
+  for (const { element, draw } of cards) {
+    el.sky.appendChild(element);
+    skyDrawers.set(element, draw);
+    skyResize.observe(element);
+  }
+  // Sparklines measure their width, so draw once the cards are in the page.
+  requestAnimationFrame(() => cards.forEach((c) => c.draw()));
 }
 
 // --- Day rail -------------------------------------------------------------
@@ -801,6 +846,20 @@ function renderDayRail(days, labels, timeZone) {
     cell.className = 'day';
     cell.dataset.today = day.isToday ? 'true' : 'false';
     cell.dataset.key = day.key;
+    cell.tabIndex = 0;
+    cell.setAttribute('role', 'button');
+    cell.setAttribute('aria-expanded', 'false');
+    cell.setAttribute('aria-controls', 'dayDetail');
+    cell.addEventListener('click', (e) => {
+      e.stopPropagation();
+      toggleDayDetail(day, cell);
+    });
+    cell.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        toggleDayDetail(day, cell);
+      }
+    });
 
     const { weekday, day: dayNum } = formatDayLabel(day.start, timeZone);
     const label = document.createElement('div');
@@ -863,19 +922,140 @@ function renderDayRail(days, labels, timeZone) {
     el.dayRail.appendChild(cell);
   }
 
-  positionDayRail();
+  closeDayDetail();
+  alignOverlays();
 }
 
+// --- Day detail -------------------------------------------------------------
+//
+// The rail can only show a two-line summary. The NWS worded forecast carries a
+// full paragraph per period — wind, timing, amounts — so clicking a day opens
+// it in place.
+
+let openDayKey = null;
+
+function toggleDayDetail(day, cell) {
+  if (openDayKey === day.key) {
+    closeDayDetail();
+    return;
+  }
+  closeDayDetail();
+  clearProbe();
+  openDayKey = day.key;
+  cell.setAttribute('aria-expanded', 'true');
+  cell.dataset.open = 'true';
+
+  const timeZone = payload.point.timeZone;
+  const periods = (payload.forecast.periods || []).filter(
+    (p) => dayKey(Date.parse(p.startTime), timeZone) === day.key
+  );
+
+  const d = el.dayDetail;
+  d.innerHTML = '';
+
+  const head = document.createElement('div');
+  head.className = 'day-detail__head';
+  const title = document.createElement('span');
+  title.className = 'day-detail__title';
+  title.textContent = formatFull(day.start, timeZone).replace(/,? \d+:\d+.*$/, '');
+  const close = document.createElement('button');
+  close.className = 'day-detail__close';
+  close.type = 'button';
+  close.setAttribute('aria-label', 'Close forecast details');
+  close.textContent = '×';
+  close.addEventListener('click', (e) => {
+    e.stopPropagation();
+    closeDayDetail();
+  });
+  head.append(title, close);
+  d.appendChild(head);
+
+  if (!periods.length) {
+    const p = document.createElement('p');
+    p.className = 'day-detail__empty';
+    p.textContent =
+      'The NWS worded forecast does not reach this day yet. The icon and summary above are derived from the numerical grid.';
+    d.appendChild(p);
+  }
+
+  for (const period of periods) {
+    const row = document.createElement('div');
+    row.className = 'day-detail__period';
+    if (period.icon) {
+      const img = document.createElement('img');
+      img.src = period.icon;
+      img.alt = '';
+      img.width = 36;
+      img.height = 36;
+      img.addEventListener('error', () => img.remove());
+      row.appendChild(img);
+    }
+    const body = document.createElement('div');
+    const name = document.createElement('div');
+    name.className = 'day-detail__name';
+    name.textContent = `${period.name} · ${period.isDaytime ? 'High' : 'Low'} ${
+      period.temperature ?? '—'
+    }°${period.temperatureUnit || 'F'}`;
+    const text = document.createElement('p');
+    text.className = 'day-detail__text';
+    text.textContent = period.detailedForecast || period.shortForecast || '';
+    body.append(name, text);
+    row.appendChild(body);
+    d.appendChild(row);
+  }
+
+  d.hidden = false;
+  positionDayDetail();
+}
+
+function closeDayDetail() {
+  openDayKey = null;
+  el.dayDetail.hidden = true;
+  el.dayRail.querySelectorAll('.day[data-open="true"]').forEach((c) => {
+    c.dataset.open = 'false';
+    c.setAttribute('aria-expanded', 'false');
+  });
+}
+
+function positionDayDetail() {
+  if (!openDayKey) return;
+  const cell = el.dayRail.querySelector(`.day[data-key="${openDayKey}"]`);
+  if (!cell) return;
+  const frameWidth = el.plotFrame.clientWidth || 900;
+  const width = Math.min(400, frameWidth - 16);
+  const centre = cell.offsetLeft + cell.offsetWidth / 2;
+  const left = Math.max(8, Math.min(frameWidth - width - 8, centre - width / 2));
+  el.dayDetail.style.width = `${width}px`;
+  el.dayDetail.style.left = `${left}px`;
+  el.dayDetail.style.top = `${el.dayRail.offsetHeight + 6}px`;
+}
+
+document.addEventListener('click', (e) => {
+  if (openDayKey && !e.target.closest('#dayDetail')) closeDayDetail();
+});
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && openDayKey) closeDayDetail();
+});
+
 /**
- * Align the day cells to the charts' plot area.
+ * Align the HTML overlays — day rail and panel legends — to the charts'
+ * shared plot area.
  *
  * Doing this in the DOM rather than painting into canvas padding is what makes
- * the icons real images with a visible fallback state.
+ * the icons real images with a visible fallback state, and the legends real
+ * buttons.
  */
-function positionDayRail() {
-  if (!charts.length || !railDays.length) return;
+function alignOverlays() {
+  if (!charts.length) return;
   const area = charts[0].chartArea;
   if (!area) return;
+
+  const canvasWidth = charts[0].width || charts[0].canvas.clientWidth || 0;
+  el.plotFrame.style.setProperty('--plot-left', `${area.left}px`);
+  el.plotFrame.style.setProperty('--plot-right', `${Math.max(0, canvasWidth - area.right)}px`);
+  positionDayDetail();
+
+  if (!railDays.length) return;
 
   const cells = el.dayRail.querySelectorAll('.day');
   railDays.forEach((day, i) => {
@@ -883,7 +1063,7 @@ function positionDayRail() {
     if (!cell) return;
     const startPx = pixelFor(day.start, railLabels, area);
     const nextStart = railDays[i + 1]?.start ?? railLabels[railLabels.length - 1] + HOUR;
-    const endPx = pixelFor(nextStart, railLabels, area);
+    const endPx = Math.min(area.right, pixelFor(nextStart, railLabels, area));
     cell.style.left = `${startPx}px`;
     cell.style.width = `${Math.max(0, endPx - startPx)}px`;
   });
@@ -926,6 +1106,7 @@ function renderCharts(series, labels, days, timeZone, theme, lat, lon) {
     probeIndex: null,
     raw: series,
     converted,
+    hidden: hiddenSeries,
   };
 
   charts = buildCharts({
@@ -935,12 +1116,98 @@ function renderCharts(series, labels, days, timeZone, theme, lat, lon) {
     units,
     timeZone,
     formatHour: (ms) => formatHour(ms, timeZone),
+    // Align in the same pass Chart.js lays out, so there is not even a
+    // one-frame lag after a resize; the scheduled pass then re-checks drift
+    // once every panel has laid out.
+    onLayout: () => {
+      alignOverlays();
+      scheduleAlign();
+    },
   });
 
-  el.forecastNote.textContent = `${DAYS} days · hourly · arrows show wind direction (downwind)`;
+  el.forecastNote.textContent = `${DAYS} days · hourly · select a day for the full worded forecast`;
 
-  requestAnimationFrame(positionDayRail);
+  renderLegends();
+  scheduleAlign();
   attachProbe();
+}
+
+let alignFrame = null;
+
+/**
+ * Coalesce overlay alignment into one frame. Called from Chart.js' layout
+ * hook (so it always sees the post-resize plot area) and from the frame's
+ * ResizeObserver.
+ */
+function scheduleAlign() {
+  if (alignFrame) return;
+  alignFrame = requestAnimationFrame(() => {
+    alignFrame = null;
+    alignOverlays();
+    // Guard against the precipitation-panel regression: every panel must
+    // share one plot area, or the time axis silently stops being common.
+    const drift = plotMisalignment(charts);
+    if (drift > 1) console.warn(`Meteogram panels misaligned by ${drift.toFixed(1)} px`);
+  });
+}
+
+// --- Legends --------------------------------------------------------------
+
+/**
+ * One legend row above each panel: the panel title and units, then a toggle
+ * for each series with a swatch drawn in the series' own line style.
+ * Choices persist, so a series you never look at stays off.
+ */
+function renderLegends() {
+  const theme = renderContext.theme;
+  const panelIndex = { temp: 0, precip: 1, cloud: 2, wind: 3 };
+
+  for (const panel of panelSpec(units)) {
+    const row = el.legends[panel.id];
+    if (!row) continue;
+    row.innerHTML = '';
+
+    const title = document.createElement('span');
+    title.className = 'legend__title';
+    title.textContent = panel.title;
+    const unit = document.createElement('span');
+    unit.className = 'legend__unit';
+    unit.textContent = panel.unit;
+    title.appendChild(unit);
+    row.appendChild(title);
+
+    for (const s of panel.series) {
+      const id = `${panel.id}.${s.key}`;
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'legend__item';
+      btn.setAttribute('aria-pressed', String(!hiddenSeries.has(id)));
+      btn.title = `Show or hide ${s.label.toLowerCase()}`;
+
+      const swatch = document.createElement('span');
+      swatch.className = `swatch swatch--${s.style}`;
+      swatch.style.setProperty('--swatch', theme[s.color]);
+
+      btn.append(swatch, document.createTextNode(s.label));
+      btn.addEventListener('click', () => {
+        const nowHidden = !hiddenSeries.has(id);
+        if (nowHidden) hiddenSeries.add(id);
+        else hiddenSeries.delete(id);
+        localStorage.setItem('wx.hidden', JSON.stringify([...hiddenSeries]));
+        btn.setAttribute('aria-pressed', String(!nowHidden));
+
+        const chart = charts[panelIndex[panel.id]];
+        const i = chart.data.datasets.findIndex((d) => d.key === s.key);
+        if (i >= 0) {
+          chart.setDatasetVisibility(i, !nowHidden);
+          chart.update('none');
+        } else {
+          chart.render(); // plugin-drawn series, e.g. wind arrows
+        }
+      });
+      row.appendChild(btn);
+    }
+  }
 }
 
 // --- Probe ----------------------------------------------------------------
@@ -950,6 +1217,11 @@ let probeFrame = null;
 function attachProbe() {
   el.plotFrame.onpointermove = (e) => {
     if (!charts.length) return;
+    // The day rail, legends and popover are controls, not data: no crosshair.
+    if (e.target.closest('.legend, .day-rail, .day-detail')) {
+      clearProbe();
+      return;
+    }
     const area = charts[0].chartArea;
     if (!area) return;
 
@@ -962,26 +1234,62 @@ function attachProbe() {
     }
 
     const frac = (x - area.left) / (area.right - area.left);
-    const index = Math.min(
-      renderContext.labels.length - 1,
-      Math.max(0, Math.round(frac * (renderContext.labels.length - 1)))
-    );
-
-    if (index === renderContext.probeIndex) {
-      positionProbe(e);
-      return;
-    }
-    renderContext.probeIndex = index;
-
-    if (probeFrame) cancelAnimationFrame(probeFrame);
-    probeFrame = requestAnimationFrame(() => {
-      charts.forEach((c) => c.render());
-      updateProbe(index);
-      positionProbe(e);
-    });
+    const index = Math.round(frac * (renderContext.labels.length - 1));
+    const frame = el.plotFrame.getBoundingClientRect();
+    setProbe(index, e.clientX - frame.left, e.clientY - frame.top);
   };
 
   el.plotFrame.onpointerleave = clearProbe;
+
+  // Keyboard: arrows step an hour, Shift+arrows six, Page Up/Down a day.
+  el.plotFrame.onkeydown = (e) => {
+    if (!charts.length || e.target.closest('.legend, .day, .day-detail')) return;
+    const n = renderContext.labels.length;
+    const current = renderContext.probeIndex ?? nowIndex();
+    const steps = {
+      ArrowRight: e.shiftKey ? 6 : 1,
+      ArrowLeft: e.shiftKey ? -6 : -1,
+      PageDown: 24,
+      PageUp: -24,
+    };
+    let next;
+    if (e.key in steps) next = current + steps[e.key];
+    else if (e.key === 'Home') next = 0;
+    else if (e.key === 'End') next = n - 1;
+    else if (e.key === 'Escape') {
+      clearProbe();
+      return;
+    } else return;
+
+    e.preventDefault();
+    next = Math.max(0, Math.min(n - 1, next));
+    const area = charts[0].chartArea;
+    const x = pixelFor(renderContext.labels[next], renderContext.labels, area);
+    setProbe(next, x, el.dayRail.offsetHeight + 60);
+  };
+}
+
+function nowIndex() {
+  const labels = renderContext.labels;
+  const i = labels.findIndex((t) => t > Date.now()) - 1;
+  return Math.max(0, i < 0 ? labels.length - 1 : i);
+}
+
+/** Move the crosshair to an hour and place the readout near (x, y) in frame px. */
+function setProbe(index, x, y) {
+  index = Math.max(0, Math.min(renderContext.labels.length - 1, index));
+  if (index === renderContext.probeIndex) {
+    positionProbe(x, y);
+    return;
+  }
+  renderContext.probeIndex = index;
+
+  if (probeFrame) cancelAnimationFrame(probeFrame);
+  probeFrame = requestAnimationFrame(() => {
+    charts.forEach((c) => c.render());
+    updateProbe(index);
+    positionProbe(x, y);
+  });
 }
 
 function clearProbe() {
@@ -1002,18 +1310,18 @@ function updateProbe(index) {
     ['Feels', t.apparent, fmt(conv.apparent[index], units.symbol('temp'))],
     ['Dewpt', t.dewpoint, fmt(conv.dewpoint[index], units.symbol('temp'))],
     null,
-    ['Chance', t.precip, fmt(conv.pop[index], '%')],
+    ['Chance', t.precip, pct(conv.pop[index])],
     ['Amount', t.qpf, fmt(conv.qpf[index], units.symbol('precipRate') + '/h')],
     null,
-    ['Sky', t.sky, fmt(conv.skyCover[index], '%')],
-    ['RH', t.rh, fmt(conv.humidity[index], '%')],
+    ['Sky', t.sky, pct(conv.skyCover[index])],
+    ['RH', t.rh, pct(conv.humidity[index])],
     null,
     ['Wind', t.wind, windSummary(index)],
     ['Gust', t.gust, fmt(conv.windGust[index], units.symbol('speed'))],
   ];
 
   if (raw.thunder[index] !== null && raw.thunder[index] > 0) {
-    rows.push(['Thunder', t.apparent, fmt(raw.thunder[index], '%')]);
+    rows.push(['Thunder', t.apparent, pct(raw.thunder[index])]);
   }
 
   const time = document.createElement('div');
@@ -1064,22 +1372,24 @@ function fmt(value, symbol) {
   return value === null || value === undefined ? '—' : `${value} ${symbol}`;
 }
 
-function positionProbe(e) {
-  const frameRect = el.plotFrame.getBoundingClientRect();
+/** Percentages skip the units layer, so they are rounded here. */
+function pct(value) {
+  return value === null || value === undefined ? '—' : `${Math.round(value)} %`;
+}
+
+function positionProbe(x, y) {
+  const frameWidth = el.plotFrame.clientWidth;
+  const frameHeight = el.plotFrame.clientHeight;
   const width = el.probe.offsetWidth;
   const height = el.probe.offsetHeight;
 
-  let left = e.clientX - frameRect.left + 16;
-  if (left + width > frameRect.width - 8) {
-    left = e.clientX - frameRect.left - width - 16;
-  }
+  let left = x + 16;
+  if (left + width > frameWidth - 8) left = x - width - 16;
 
-  let top = e.clientY - frameRect.top + 16;
-  if (top + height > frameRect.height - 8) {
-    top = Math.max(8, e.clientY - frameRect.top - height - 16);
-  }
+  let top = y + 16;
+  if (top + height > frameHeight - 8) top = Math.max(8, y - height - 16);
 
-  el.probe.style.left = `${left}px`;
+  el.probe.style.left = `${Math.max(0, left)}px`;
   el.probe.style.top = `${top}px`;
 }
 
@@ -1217,9 +1527,7 @@ function renderProvenance(point, grid, forecast, observations, air, timeZone) {
 
 // --- Resize ---------------------------------------------------------------
 
-const resizeObserver = new ResizeObserver(() => {
-  requestAnimationFrame(positionDayRail);
-});
+const resizeObserver = new ResizeObserver(() => scheduleAlign());
 resizeObserver.observe(el.plotFrame);
 
 // --- Boot -----------------------------------------------------------------
@@ -1266,13 +1574,66 @@ const start = initialLocation();
 el.searchInput.value = start.name;
 load(start.lat, start.lon, start.name);
 
-// Keep observation ages honest without refetching.
-setInterval(() => {
-  if (payload) renderObservations(
-    payload.observations,
-    payload.air,
-    payload.lat,
-    payload.lon,
-    payload.point.timeZone
+// --- Freshness and background refresh ----------------------------------------
+//
+// The page is often left open all day. Every 30 s: update the "x min ago"
+// labels in place (no re-render), and if the data are older than the refresh
+// interval, fetch again quietly. Refreshes wait while you are reading — the
+// tab hidden, the crosshair out, or a day's detail open — so the page never
+// rebuilds under your cursor.
+
+function updateFreshness() {
+  if (!fetchedAt) return;
+  const age = relativeAge(fetchedAt);
+  if (refreshFailedAt) {
+    el.freshness.dataset.state = 'stale';
+    el.freshness.textContent = `Refresh failed · showing data fetched ${age}`;
+  } else {
+    el.freshness.dataset.state = 'fresh';
+    el.freshness.textContent = `Fetched ${age}`;
+  }
+  el.freshness.title = `Fetched ${new Date(fetchedAt).toLocaleString()}`;
+}
+
+function refreshAges() {
+  for (const node of document.querySelectorAll('[data-age-from]')) {
+    node.textContent = relativeAge(Number(node.dataset.ageFrom));
+  }
+  updateFreshness();
+}
+
+function userIsReading() {
+  return (
+    document.visibilityState !== 'visible' ||
+    renderContext?.probeIndex != null ||
+    openDayKey !== null ||
+    el.plotFrame.contains(document.activeElement)
   );
-}, 60000);
+}
+
+function maybeRefresh() {
+  if (!payload || !fetchedAt || userIsReading()) return;
+  const now = Date.now();
+  if (refreshFailedAt && now - refreshFailedAt < REFRESH_RETRY) return;
+  if (now - fetchedAt < REFRESH_EVERY) return;
+  load(payload.lat, payload.lon, payload.name, { silent: true });
+}
+
+function refreshNow() {
+  if (!payload) return;
+  load(payload.lat, payload.lon, payload.name, { silent: true });
+}
+
+el.refreshBtn.addEventListener('click', refreshNow);
+
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible') {
+    refreshAges();
+    maybeRefresh();
+  }
+});
+
+setInterval(() => {
+  refreshAges();
+  maybeRefresh();
+}, 30000);

@@ -29,6 +29,7 @@
       <p class="eyebrow">Seven-day meteogram</p>
       <h1 class="nameplate__place" id="place">Loading</h1>
       <p class="nameplate__coords" id="coords"></p>
+      <p class="nameplate__freshness" id="freshness" data-state="fresh" aria-live="polite"></p>
     </div>
 
     <div class="nameplate__tools">
@@ -46,6 +47,7 @@
         <ul class="search__results" id="searchResults" role="listbox" aria-label="Location matches"></ul>
       </div>
 
+      <button class="btn" id="refreshBtn" type="button" title="Fetch the latest data now">Refresh</button>
       <button class="btn" id="unitToggle" type="button">°F · kt</button>
       <button class="btn" id="themeToggle" type="button">Light</button>
     </div>
@@ -71,18 +73,41 @@
 
     <section class="section">
       <div class="section__head">
+        <h2 class="eyebrow">Sky</h2>
+        <p class="section__note">Computed locally · hover a curve to read any day</p>
+      </div>
+      <div class="readouts readouts--sky" id="sky"></div>
+    </section>
+
+    <section class="section">
+      <div class="section__head">
         <h2 class="eyebrow">Forecast</h2>
         <p class="section__note" id="forecastNote"></p>
       </div>
 
       <div class="plot-scroll">
-        <div class="plot-frame" id="plotFrame">
+        <div class="plot-frame" id="plotFrame" tabindex="0"
+             aria-label="Hourly forecast charts. Use the arrow keys to step through hours, Page Up and Page Down to jump a day.">
           <div class="probe" id="probe" data-visible="false" aria-hidden="true"></div>
           <div class="day-rail" id="dayRail"></div>
-          <div class="plot"><canvas id="plotTemp" height="230" aria-label="Temperature, feels-like temperature, and dewpoint"></canvas></div>
-          <div class="plot"><canvas id="plotPrecip" height="140" aria-label="Precipitation chance and hourly amount"></canvas></div>
-          <div class="plot"><canvas id="plotCloud" height="130" aria-label="Sky cover and relative humidity"></canvas></div>
-          <div class="plot"><canvas id="plotWind" height="155" aria-label="Wind speed, gusts, and direction"></canvas></div>
+          <div class="day-detail" id="dayDetail" role="region" aria-label="Worded forecast" hidden></div>
+
+          <div class="plot">
+            <div class="legend" id="legendTemp"></div>
+            <div class="plot__canvas plot__canvas--temp"><canvas id="plotTemp" aria-label="Temperature, feels-like temperature, and dewpoint"></canvas></div>
+          </div>
+          <div class="plot">
+            <div class="legend" id="legendPrecip"></div>
+            <div class="plot__canvas plot__canvas--precip"><canvas id="plotPrecip" aria-label="Precipitation chance and hourly amount"></canvas></div>
+          </div>
+          <div class="plot">
+            <div class="legend" id="legendCloud"></div>
+            <div class="plot__canvas plot__canvas--cloud"><canvas id="plotCloud" aria-label="Sky cover and relative humidity"></canvas></div>
+          </div>
+          <div class="plot">
+            <div class="legend" id="legendWind"></div>
+            <div class="plot__canvas plot__canvas--wind"><canvas id="plotWind" aria-label="Wind speed, gusts, and direction"></canvas></div>
+          </div>
         </div>
       </div>
     </section>

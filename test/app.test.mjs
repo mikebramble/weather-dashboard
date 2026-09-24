@@ -101,10 +101,8 @@ function ok(name, cond, detail = '') {
     'Air quality card rendered',
     sources.some((s) => s.includes('Air quality'))
   );
-  ok(
-    'Sun and moon card rendered',
-    sources.some((s) => s.includes('Sun and moon'))
-  );
+  const sky = [...doc.querySelectorAll('#sky .readout')];
+  ok('Sky row has Sun and Moon cards', sky.length === 2, `got ${sky.length}`);
 
   // --- Hazards ------------------------------------------------------------
   const hazards = [...doc.querySelectorAll('.hazard')];
@@ -144,14 +142,14 @@ function ok(name, cond, detail = '') {
 
   ok(
     'Dewpoint series present in the temperature panel',
-    tempChart.data.datasets.some((d) => d.label === 'Dewpoint')
+    tempChart.data.datasets.some((d) => d.key === 'dewpoint')
   );
 
   const windChart = live[3];
   ok(
     'Wind panel has speed and gusts',
-    windChart.data.datasets.map((d) => d.label).join(',') === 'Wind,Gusts',
-    windChart.data.datasets.map((d) => d.label).join(',')
+    windChart.data.datasets.map((d) => d.key).join(',') === 'windSpeed,windGust',
+    windChart.data.datasets.map((d) => d.key).join(',')
   );
 
   // Plugins actually drew: twilight fills, day gridlines, wind arrows.
@@ -163,7 +161,7 @@ function ok(name, cond, detail = '') {
 
   // --- QPF is a rate, not a repeated block total --------------------------
   const precipChart = live[1];
-  const qpf = precipChart.data.datasets.find((d) => d.label === 'Amount').data;
+  const qpf = precipChart.data.datasets.find((d) => d.key === 'qpf').data;
   const totalIn = qpf.reduce((a, b) => a + (b || 0), 0);
   // Three PT6H blocks of 6 mm each = 18 mm = 0.7087 in over 18 wet hours.
   // Copying the block value to every hour instead of dividing would give
@@ -369,6 +367,231 @@ function ok(name, cond, detail = '') {
   // Force the points lookup to 404 by pointing at an unmatched URL scheme.
   const { doc } = await boot({ forecastDays: 7, alerts: false });
   ok('Recovered scenario still renders', !doc.getElementById('content').hidden);
+}
+
+// =========================================================================
+// Scenario E: legends, day detail, keyboard, sky cards, refresh.
+// =========================================================================
+{
+  console.log('\n--- Scenario E: legends, day detail, keyboard, sky, refresh ---');
+  const tick = (ms = 40) => new Promise((r) => setTimeout(r, ms));
+  const { doc, window, charts, log, scenario } = await boot({ forecastDays: 7 });
+  const live = () => charts.filter((c) => !c.destroyed);
+  const key = (e) => new window.KeyboardEvent('keydown', { key: e, bubbles: true });
+
+  // --- Legends -----------------------------------------------------------
+  const rows = ['legendTemp', 'legendPrecip', 'legendCloud', 'legendWind'].map((id) =>
+    doc.getElementById(id)
+  );
+  const titles = rows.map((r) => r.querySelector('.legend__title')?.firstChild?.textContent);
+  ok(
+    'Each panel has a titled legend',
+    titles.join('|') === 'Temperature|Precipitation|Sky and humidity|Wind',
+    titles.join('|')
+  );
+  const counts = rows.map((r) => r.querySelectorAll('.legend__item').length);
+  ok('Legend items per panel: 3, 2, 2, 3', counts.join(',') === '3,2,2,3', counts.join(','));
+  ok(
+    'Units live in the legend, not the axis',
+    rows[0].querySelector('.legend__unit').textContent === '°F' &&
+      rows[3].querySelector('.legend__unit').textContent === 'kt',
+    rows.map((r) => r.querySelector('.legend__unit').textContent).join(' | ')
+  );
+  const styles = [...rows[0].querySelectorAll('.swatch')].map((w) => w.className.split('--')[1]);
+  ok('Swatches mirror line styles', styles.join(',') === 'area,dash,line', styles.join(','));
+  ok(
+    'Swatch colour comes from the series palette',
+    rows[0].querySelector('.swatch').style.getPropertyValue('--swatch') === '#ff6f4d',
+    rows[0].querySelector('.swatch').style.getPropertyValue('--swatch')
+  );
+
+  // Legends are aligned to the plot area, not the canvas edge.
+  ok(
+    'Plot-area offsets exported for the overlays',
+    doc.getElementById('plotFrame').style.getPropertyValue('--plot-left') === '58px' &&
+      doc.getElementById('plotFrame').style.getPropertyValue('--plot-right') === '60px',
+    `${doc.getElementById('plotFrame').style.getPropertyValue('--plot-left')} / ${doc.getElementById('plotFrame').style.getPropertyValue('--plot-right')}`
+  );
+
+  // --- Toggling a series -------------------------------------------------
+  const feels = [...rows[0].querySelectorAll('.legend__item')].find((b) =>
+    b.textContent.includes('Feels like')
+  );
+  feels.click();
+  const tempChart = live()[0];
+  ok(
+    'Clicking a legend item hides that series',
+    tempChart.data.datasets.find((d) => d.key === 'apparent').hidden === true
+  );
+  ok('Legend item reflects the hidden state', feels.getAttribute('aria-pressed') === 'false');
+  ok(
+    'Choice persists to storage',
+    JSON.parse(window.localStorage.getItem('wx.hidden')).includes('temp.apparent'),
+    window.localStorage.getItem('wx.hidden')
+  );
+
+  doc.getElementById('unitToggle').click();
+  await tick();
+  ok(
+    'Hidden series stay hidden across a re-render',
+    live()[0].data.datasets.find((d) => d.key === 'apparent').hidden === true
+  );
+  doc.getElementById('unitToggle').click();
+  await tick();
+
+  const arrowsBtn = [...doc.getElementById('legendWind').querySelectorAll('.legend__item')].find(
+    (b) => b.textContent.includes('Direction')
+  );
+  const wind = live()[3];
+  wind.ctx.calls.length = 0;
+  arrowsBtn.click();
+  ok(
+    'Hiding wind direction removes the arrows',
+    wind.ctx.calls.filter((c) => c.name === 'rotate').length === 0,
+    `${wind.ctx.calls.filter((c) => c.name === 'rotate').length} arrows drawn`
+  );
+  arrowsBtn.click();
+  ok(
+    'Showing it again redraws them',
+    wind.ctx.calls.filter((c) => c.name === 'rotate').length > 0
+  );
+
+  // --- Day detail --------------------------------------------------------
+  const day0 = doc.querySelector('.day');
+  ok('Day cells are keyboard-operable buttons', day0.getAttribute('role') === 'button' && day0.tabIndex === 0);
+  day0.click();
+  const detail = doc.getElementById('dayDetail');
+  ok('Clicking a day opens its worded forecast', detail.hidden === false);
+  ok(
+    'Detail carries the full daytime paragraph',
+    detail.textContent.includes('Sunny, with a high near 78. West wind 5 to 10 mph.'),
+    detail.textContent.slice(0, 120)
+  );
+  ok(
+    'Detail carries the night period too',
+    detail.textContent.includes('Clear, with a low around 58.')
+  );
+  ok('Opened day is marked expanded', day0.getAttribute('aria-expanded') === 'true');
+  doc.dispatchEvent(key('Escape'));
+  ok('Escape closes the detail', detail.hidden === true);
+  day0.click();
+  day0.click();
+  ok('Clicking the same day again toggles it closed', detail.hidden === true);
+
+  // --- Keyboard probe ----------------------------------------------------
+  const frame = doc.getElementById('plotFrame');
+  frame.focus();
+  frame.dispatchEvent(key('ArrowRight'));
+  await tick();
+  ok('Arrow key shows the readout', doc.getElementById('probe').dataset.visible === 'true');
+  const firstTime = doc.querySelector('.probe__time').textContent;
+  frame.dispatchEvent(key('PageDown'));
+  await tick();
+  const secondTime = doc.querySelector('.probe__time').textContent;
+  ok('Page Down jumps a day', firstTime !== secondTime, `${firstTime} -> ${secondTime}`);
+  const probeText = doc.getElementById('probe').textContent;
+  ok('Probe percentages are whole numbers', !/\d\.\d+ %/.test(probeText),
+    (probeText.match(/[\d.]+ %/g) || []).join(' '));
+  frame.dispatchEvent(key('Escape'));
+  await tick();
+  ok('Escape clears the crosshair', doc.getElementById('probe').dataset.visible === 'false');
+
+  // --- Sky cards ---------------------------------------------------------
+  const [sun, moon] = doc.querySelectorAll('#sky .readout');
+  ok('Sun card headline is a day length', /^\d+h \d{2}m$/.test(sun.querySelector('.readout__value').textContent),
+    sun.querySelector('.readout__value').textContent);
+  ok('Sun card reports the daily rate of change', /vs yesterday/.test(sun.textContent));
+  const sunLabels = [...sun.querySelectorAll('.field__label')].map((l) => l.textContent);
+  ok(
+    'Sun fields: rise, set, first/last light, noon, next season',
+    ['Sunrise', 'Sunset', 'First light', 'Last light', 'Solar noon'].every((l) => sunLabels.includes(l)) &&
+      /^(Mar|Jun|Sep|Dec) (equinox|solstice)$/.test(sunLabels[5]),
+    sunLabels.join(', ')
+  );
+  const sunPaths = sun.querySelectorAll('.spark svg path');
+  ok('Sun sparkline drawn (area + line)', sunPaths.length === 2, `${sunPaths.length} paths`);
+  ok('Today is marked on the Sun sparkline', !!sun.querySelector('.spark__today') && !!sun.querySelector('.spark__dot'));
+
+  const pointsIn = (el) => (el.querySelector('.spark__line').getAttribute('d').match(/L/g) || []).length;
+  const before = pointsIn(sun);
+  const yr = [...sun.querySelectorAll('.seg__btn')].find((b) => b.textContent === '1 yr');
+  yr.click();
+  ok('Range toggle redraws with a longer window', pointsIn(sun) > before, `${before} -> ${pointsIn(sun)} points`);
+  ok('Range choice persists', window.localStorage.getItem('wx.sunRange') === '1y');
+  ok(
+    'A year window shows solstice and equinox marks',
+    sun.querySelectorAll('.spark__mark').length >= 3,
+    `${sun.querySelectorAll('.spark__mark').length} marks`
+  );
+
+  const svgEl = sun.querySelector('.spark svg');
+  const readout = sun.querySelector('.spark__readout');
+  const idle = readout.textContent;
+  svgEl.dispatchEvent(new window.MouseEvent('pointermove', { clientX: 40, clientY: 20, bubbles: true }));
+  ok('Hovering the sparkline reads out that day', readout.textContent !== idle && /▲.*▼/.test(readout.textContent),
+    readout.textContent);
+  svgEl.dispatchEvent(new window.MouseEvent('pointerleave', { bubbles: false }));
+  ok('Leaving restores the idle caption', readout.textContent === idle);
+
+  ok('Moon card draws a phase glyph', !!moon.querySelector('.moon-glyph'));
+  ok('Moon headline is an illumination', /^\d{1,3}%$/.test(moon.querySelector('.readout__value').textContent),
+    moon.querySelector('.readout__value').textContent);
+  const moonLabels = [...moon.querySelectorAll('.field__label')].map((l) => l.textContent);
+  ok('Moon fields: rise, set, next full, next new',
+    moonLabels.join(',') === 'Moonrise,Moonset,Next full,Next new', moonLabels.join(','));
+  ok('Moon sparkline marks new and full', moon.querySelectorAll('.spark__mark').length >= 1);
+
+  // --- Freshness and refresh ---------------------------------------------
+  ok('Freshness line shows when data were fetched', /Fetched (just now|\d+ min ago)/.test(doc.getElementById('freshness').textContent),
+    doc.getElementById('freshness').textContent);
+  ok('Observation ages are live-updatable', doc.querySelectorAll('[data-age-from]').length >= 2);
+
+  const gridCalls = () => log.filter((u) => /gridpoints\/BOU\/62,79$/.test(u)).length;
+  const n0 = gridCalls();
+  doc.getElementById('refreshBtn').click();
+  await tick(120);
+  ok('Refresh refetches the grid', gridCalls() === n0 + 1, `${n0} -> ${gridCalls()}`);
+  ok('Refresh does not blank the page', doc.getElementById('status').hidden && !doc.getElementById('content').hidden);
+
+  scenario.failAll = true;
+  doc.getElementById('refreshBtn').click();
+  await tick(120);
+  ok('A failed refresh keeps the current forecast on screen', !doc.getElementById('content').hidden && doc.querySelectorAll('.day').length === 7);
+  ok('A failed refresh is flagged, not hidden', /Refresh failed/.test(doc.getElementById('freshness').textContent),
+    doc.getElementById('freshness').textContent);
+  scenario.failAll = false;
+}
+
+// =========================================================================
+// Scenario F: persisted choices apply on first render; derived-day detail.
+// =========================================================================
+{
+  console.log('\n--- Scenario F: persisted legend choices, derived-day detail ---');
+  const { doc, charts } = await boot({
+    forecastDays: 5,
+    storage: { 'wx.hidden': JSON.stringify(['cloud.humidity']), 'wx.sunRange': '3m' },
+  });
+  const cloud = charts.filter((c) => !c.destroyed)[2];
+  ok(
+    'A series hidden last session starts hidden',
+    cloud.data.datasets.find((d) => d.key === 'humidity').hidden === true
+  );
+  ok(
+    'Its legend item starts unpressed',
+    [...doc.getElementById('legendCloud').querySelectorAll('.legend__item')]
+      .find((b) => b.textContent.includes('humidity')).getAttribute('aria-pressed') === 'false'
+  );
+  ok(
+    'Saved sparkline range restored',
+    doc.querySelector('#sky .seg__btn[aria-pressed="true"]').textContent === '±3 mo'
+  );
+
+  const days = doc.querySelectorAll('.day');
+  days[6].click();
+  ok(
+    'A day beyond the worded forecast explains itself',
+    /does not reach this day/.test(doc.getElementById('dayDetail').textContent)
+  );
 }
 
 console.log(

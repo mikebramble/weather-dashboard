@@ -139,7 +139,12 @@ export function makeForecast({ days = 7 } = {}) {
       endTime: iso(dayStart + 12 * HOUR),
       isDaytime: true,
       temperature: 78 + d,
+      temperatureUnit: 'F',
       shortForecast: d === 3 ? 'Chance Rain Showers' : 'Sunny',
+      detailedForecast:
+        d === 3
+          ? 'A chance of rain showers after 11am. Mostly cloudy, with a high near 81. Chance of precipitation is 40%.'
+          : `Sunny, with a high near ${78 + d}. West wind 5 to 10 mph.`,
       icon: `https://api.weather.gov/icons/land/day/${d === 3 ? 'rain,40' : 'skc'}?size=medium`,
     });
     periods.push({
@@ -149,7 +154,9 @@ export function makeForecast({ days = 7 } = {}) {
       endTime: iso(dayStart + 24 * HOUR),
       isDaytime: false,
       temperature: 58 + d,
+      temperatureUnit: 'F',
       shortForecast: 'Clear',
+      detailedForecast: `Clear, with a low around ${58 + d}.`,
       icon: 'https://api.weather.gov/icons/land/night/skc?size=medium',
     });
   }

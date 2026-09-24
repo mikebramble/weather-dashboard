@@ -118,3 +118,38 @@ export function relativeAge(ms, now = Date.now()) {
   const d = Math.floor(h / 24);
   return `${d} d ${h % 24} h ago`;
 }
+
+/** Wall-clock time at the location, e.g. "6:42 AM". */
+export function formatClock(ms, timeZone) {
+  return new Intl.DateTimeFormat('en-US', {
+    timeZone,
+    hour: 'numeric',
+    minute: '2-digit',
+  }).format(new Date(ms));
+}
+
+/** Short calendar date at the location, e.g. "Oct 8". */
+export function formatDate(ms, timeZone) {
+  return new Intl.DateTimeFormat('en-US', {
+    timeZone,
+    month: 'short',
+    day: 'numeric',
+  }).format(new Date(ms));
+}
+
+/** A duration as "11h 42m". */
+export function formatDuration(ms) {
+  const totalMin = Math.round(ms / 60000);
+  const h = Math.floor(totalMin / 60);
+  const m = totalMin % 60;
+  return `${h}h ${String(m).padStart(2, '0')}m`;
+}
+
+/** A signed change as "+1 m 35 s" or "−42 s". Uses a true minus sign. */
+export function formatDelta(ms) {
+  const sign = ms < 0 ? '−' : '+';
+  const s = Math.round(Math.abs(ms) / 1000);
+  const m = Math.floor(s / 60);
+  const r = s % 60;
+  return m ? `${sign}${m} m ${String(r).padStart(2, '0')} s` : `${sign}${r} s`;
+}

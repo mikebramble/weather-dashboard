@@ -62,7 +62,7 @@ function solarParams(ms) {
       0.5 * y * y * Math.sin(4 * RAD * meanLong) -
       1.25 * eccent * eccent * Math.sin(2 * RAD * meanAnom));
 
-  return { declination, eqTime };
+  return { declination, eqTime, appLong: ((appLong % 360) + 360) % 360 };
 }
 
 /**
@@ -100,27 +100,35 @@ export function solarElevation(ms, lat, lon) {
  * callers should fall back to the sign of the elevation at the midpoint.
  */
 export function findCrossings(startMs, endMs, lat, lon, threshold = HORIZON) {
-  const step = 10 * 60 * 1000; // 10-minute coarse scan
+  return crossingsOf((ms) => solarElevation(ms, lat, lon), startMs, endMs, threshold);
+}
+
+/**
+ * Crossings of any smooth function of time through a threshold, by coarse
+ * scan plus bisection to the second. Shared by the Sun and the Moon.
+ *
+ * The 10-minute step is safe for both bodies: neither can cross the horizon
+ * twice within ten minutes at any latitude this page serves.
+ */
+export function crossingsOf(fn, startMs, endMs, threshold, stepMs = 10 * 60 * 1000) {
   const crossings = [];
   let prevMs = startMs;
-  let prevEl = solarElevation(prevMs, lat, lon) - threshold;
+  let prevV = fn(prevMs) - threshold;
 
-  for (let ms = startMs + step; ms <= endMs; ms += step) {
-    const el = solarElevation(ms, lat, lon) - threshold;
-    if (prevEl === 0 || (prevEl < 0) !== (el < 0)) {
-      // Bisect to the second.
+  for (let ms = startMs + stepMs; ms <= endMs; ms += stepMs) {
+    const v = fn(ms) - threshold;
+    if (prevV === 0 || (prevV < 0) !== (v < 0)) {
       let lo = prevMs;
       let hi = ms;
       for (let i = 0; i < 24 && hi - lo > 1000; i++) {
         const mid = (lo + hi) / 2;
-        const midEl = solarElevation(mid, lat, lon) - threshold;
-        if ((midEl < 0) === (prevEl < 0)) lo = mid;
+        if ((fn(mid) - threshold < 0) === (prevV < 0)) lo = mid;
         else hi = mid;
       }
-      crossings.push({ ms: Math.round((lo + hi) / 2), rising: el > prevEl });
+      crossings.push({ ms: Math.round((lo + hi) / 2), rising: v > prevV });
     }
     prevMs = ms;
-    prevEl = el;
+    prevV = v;
   }
   return crossings;
 }
@@ -175,6 +183,80 @@ export function sunriseSunset(dayStartMs, lat, lon) {
   const rise = crossings.find((c) => c.rising);
   const set = crossings.find((c) => !c.rising);
   return { sunrise: rise ? rise.ms : null, sunset: set ? set.ms : null };
+}
+
+/** Apparent ecliptic longitude of the Sun, degrees [0, 360). */
+export function solarLongitude(ms) {
+  return solarParams(ms).appLong;
+}
+
+/**
+ * Solar noon (transit) nearest the middle of a local day, and the Sun's
+ * elevation at that moment.
+ *
+ * From the equation of time: transit falls at 720 - 4*lon - EoT minutes past
+ * UTC midnight. EoT is re-evaluated at the first estimate, which is enough to
+ * converge to well under a second.
+ */
+export function solarNoon(dayStartMs, lat, lon) {
+  const DAY = 86400000;
+  const approx = dayStartMs + DAY / 2;
+  let noon = approx;
+  for (let i = 0; i < 2; i++) {
+    const { eqTime } = solarParams(noon);
+    const utcMidnight = Math.floor(approx / DAY) * DAY;
+    noon = utcMidnight + (720 - 4 * lon - eqTime) * 60000;
+    if (noon - approx > DAY / 2) noon -= DAY;
+    if (approx - noon > DAY / 2) noon += DAY;
+  }
+  return { ms: noon, elevation: solarElevation(noon, lat, lon) };
+}
+
+/**
+ * Analytic day length for a date: the time the Sun spends above `threshold`.
+ *
+ * Uses the hour-angle of the threshold at the day's declination. Good to about
+ * a minute, and O(1) — about 1000x cheaper than scanning for crossings, which
+ * matters when plotting a full year. Headline values on the page use the exact
+ * crossing search instead; this is for the curves.
+ *
+ * @returns {number} milliseconds, 0 for polar night, 24 h for polar day
+ */
+export function dayLengthAnalytic(noonMs, lat, threshold = HORIZON) {
+  const { declination } = solarParams(noonMs);
+  const cosH =
+    (Math.sin(RAD * threshold) - Math.sin(RAD * lat) * Math.sin(RAD * declination)) /
+    (Math.cos(RAD * lat) * Math.cos(RAD * declination));
+  if (cosH >= 1) return 0;
+  if (cosH <= -1) return 86400000;
+  return ((2 * Math.acos(cosH) * DEG) / 15) * 3600000;
+}
+
+const SEASON_NAMES = ['March equinox', 'June solstice', 'September equinox', 'December solstice'];
+
+/**
+ * The next equinox or solstice after `fromMs`: the instant the Sun's apparent
+ * longitude reaches the next multiple of 90 degrees. Names are by month rather
+ * than season, so they hold in both hemispheres.
+ */
+export function nextSeasonEvent(fromMs) {
+  const DAY = 86400000;
+  const quadrant = (ms) => Math.floor(solarLongitude(ms) / 90) % 4;
+  const q0 = quadrant(fromMs);
+
+  let lo = fromMs;
+  let hi = fromMs + DAY;
+  while (quadrant(hi) === q0 && hi - fromMs < 100 * DAY) {
+    lo = hi;
+    hi += DAY;
+  }
+  while (hi - lo > 1000) {
+    const mid = (lo + hi) / 2;
+    if (quadrant(mid) === q0) lo = mid;
+    else hi = mid;
+  }
+  const next = (q0 + 1) % 4;
+  return { ms: Math.round(hi), name: SEASON_NAMES[next] };
 }
 
 /**

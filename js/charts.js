@@ -206,6 +206,7 @@ function windArrowPlugin(getContext) {
       if (!chartArea) return;
       const c = getContext();
       if (!c || !c.windDirections) return;
+      if (c.hidden && c.hidden.has('wind.windDirection')) return;
 
       const { labels, windDirections, theme } = c;
       const y = chartArea.top + 11;
@@ -300,20 +301,110 @@ const LINE_BASE = {
  * @param {object} spec.units
  * @returns {Chart[]}
  */
-export function buildCharts({ canvases, getContext, data, units, timeZone, formatHour }) {
+/**
+ * The four panels, described once. This spec drives both the Chart.js
+ * datasets and the HTML legend above each panel, so the two cannot drift.
+ *
+ * `style` is how a series is drawn, and the legend swatch mimics it:
+ *   area   filled line        dash   dashed line      line   plain line
+ *   bar    bars               arrow  direction glyphs (drawn by a plugin)
+ */
+export function panelSpec(units) {
+  return [
+    {
+      id: 'temp',
+      title: 'Temperature',
+      unit: units.symbol('temp'),
+      series: [
+        { key: 'temperature', label: 'Air', color: 'temp', style: 'area' },
+        { key: 'apparent', label: 'Feels like', color: 'apparent', style: 'dash' },
+        { key: 'dewpoint', label: 'Dewpoint', color: 'dewpoint', style: 'line' },
+      ],
+    },
+    {
+      id: 'precip',
+      title: 'Precipitation',
+      unit: `% · ${units.symbol('precipRate')}/h`,
+      series: [
+        { key: 'pop', label: 'Chance', color: 'precip', style: 'area' },
+        { key: 'qpf', label: 'Amount per hour', color: 'qpf', style: 'bar' },
+      ],
+    },
+    {
+      id: 'cloud',
+      title: 'Sky and humidity',
+      unit: '%',
+      series: [
+        { key: 'skyCover', label: 'Sky cover', color: 'sky', style: 'area' },
+        { key: 'humidity', label: 'Relative humidity', color: 'rh', style: 'line' },
+      ],
+    },
+    {
+      id: 'wind',
+      title: 'Wind',
+      unit: units.symbol('speed'),
+      series: [
+        { key: 'windSpeed', label: 'Sustained', color: 'wind', style: 'area' },
+        { key: 'windGust', label: 'Gusts', color: 'gust', style: 'dash' },
+        { key: 'windDirection', label: 'Direction (downwind)', color: 'wind', style: 'arrow' },
+      ],
+    },
+  ];
+}
+
+/*
+ * Axis gutters.
+ *
+ * Every panel reserves the SAME width on BOTH sides. This is what keeps the
+ * plot areas, and therefore the time axis, aligned across the stack.
+ *
+ * The v2 layout broke this: only the precipitation panel had a right-hand
+ * axis (the amount scale), so its plot area was 58 px narrower than the
+ * others. Its data were squeezed leftward by up to 58 px at the right edge,
+ * and the crosshair drifted with them. The fix is structural — each panel now
+ * carries a right axis of identical width, mirroring its left scale where it
+ * has no second quantity — and test/layout.test.mjs measures the plot areas
+ * under real Chart.js layout so the regression cannot return silently.
+ */
+export const AXIS_WIDTH = 46;
+
+export function buildCharts({ canvases, getContext, data, units, timeZone, formatHour, onLayout }) {
   const ctxRef = getContext();
   const theme = ctxRef.theme;
   const labels = ctxRef.labels;
+  const hidden = ctxRef.hidden || new Set();
   const indices = labels.map((_, i) => i);
+  const spec = panelSpec(units);
 
-  // Every panel reserves the same axis width so the plot areas line up and
-  // the day rail can be positioned once for all of them.
-  const AXIS_WIDTH = 58;
   const lockAxis = (scale) => {
     scale.width = AXIS_WIDTH;
   };
 
-  const shared = (isBottom) => ({
+  // One formatter for every tick callback, rather than one per call.
+  const hourFmt = new Intl.DateTimeFormat('en-US', { timeZone, hour: 'numeric', hour12: false });
+  const tickFont = { size: 10, family: 'ui-monospace, monospace' };
+
+  const xAxis = (isBottom) => ({
+    type: 'category',
+    offset: false,
+    grid: { display: false, drawTicks: isBottom },
+    border: { display: isBottom, color: theme.line },
+    ticks: {
+      display: isBottom,
+      autoSkip: false,
+      maxRotation: 0,
+      color: theme.inkFaint,
+      font: tickFont,
+      callback(value, index) {
+        const ms = labels[index];
+        if (ms === undefined) return null;
+        const h = Number(hourFmt.format(new Date(ms))) % 24;
+        return h % 6 === 0 && h !== 0 ? formatHour(ms) : null;
+      },
+    },
+  });
+
+  const options = (isBottom, yScales, extra = {}) => ({
     responsive: true,
     maintainAspectRatio: false,
     animation: false,
@@ -324,261 +415,176 @@ export function buildCharts({ canvases, getContext, data, units, timeZone, forma
       tooltip: { enabled: false },
       decimation: { enabled: false },
     },
-    scales: {
-      x: {
-        type: 'category',
-        offset: false,
-        grid: { display: false, drawTicks: isBottom },
-        border: { display: isBottom, color: theme.line },
-        ticks: {
-          display: isBottom,
-          autoSkip: false,
-          maxRotation: 0,
-          color: theme.inkFaint,
-          font: { size: 10, family: 'ui-monospace, monospace' },
-          callback(value, index) {
-            const ms = labels[index];
-            if (ms === undefined) return null;
-            const h = Number(
-              new Intl.DateTimeFormat('en-US', {
-                timeZone,
-                hour: 'numeric',
-                hour12: false,
-              }).format(new Date(ms))
-            ) % 24;
-            return h % 6 === 0 && h !== 0 ? formatHour(ms) : null;
-          },
-        },
-      },
+    scales: { x: xAxis(isBottom), ...yScales },
+    ...extra,
+  });
+
+  const yAxis = (overrides = {}) => ({
+    position: 'left',
+    grid: { color: withAlpha(theme.line, 0.9), drawTicks: false },
+    border: { display: false },
+    afterFit: lockAxis,
+    ...overrides,
+    ticks: {
+      color: theme.inkFaint,
+      font: tickFont,
+      padding: 6,
+      maxTicksLimit: 6,
+      ...(overrides.ticks || {}),
     },
   });
 
-  const yBase = {
-    grid: { color: withAlpha(theme.line, 0.9), drawTicks: false },
-    border: { display: false },
-    ticks: {
-      color: theme.inkFaint,
-      font: { size: 10, family: 'ui-monospace, monospace' },
-      padding: 6,
-      maxTicksLimit: 6,
-    },
-    afterFit: lockAxis,
+  // A right-hand axis that repeats the left one exactly: same range, same
+  // ticks. Useful for reading values at the right edge of a wide plot, and it
+  // is what gives every panel an identical right gutter.
+  const mirrorOf = (primaryId, tickOverrides = {}) =>
+    yAxis({
+      position: 'right',
+      grid: { display: false, drawTicks: false },
+      ticks: tickOverrides,
+      afterDataLimits(scale) {
+        const p = scale.chart.scales[primaryId];
+        scale.min = p.min;
+        scale.max = p.max;
+      },
+      afterBuildTicks(scale) {
+        scale.ticks = scale.chart.scales[primaryId].ticks.map((t) => ({ ...t }));
+      },
+    });
+
+  const percentTicks = { stepSize: 50, callback: (v) => `${v}%` };
+
+  const dataset = (panelId, s, extra = {}) => {
+    const color = theme[s.color];
+    const base = {
+      ...LINE_BASE,
+      key: s.key,
+      label: s.label,
+      data: data[s.key],
+      borderColor: color,
+      hidden: hidden.has(`${panelId}.${s.key}`),
+    };
+    if (s.style === 'area') {
+      Object.assign(base, {
+        fill: 'start',
+        backgroundColor: fadeFill(color, s.color === 'precip' || s.color === 'sky' ? 0.3 : 0.2),
+        borderWidth: s.color === 'temp' ? 2 : 1.6,
+      });
+    }
+    if (s.style === 'dash') Object.assign(base, { borderDash: [4, 3], borderWidth: 1.4 });
+    if (s.style === 'bar') {
+      return {
+        type: 'bar',
+        key: s.key,
+        label: s.label,
+        data: data[s.key],
+        backgroundColor: withAlpha(color, 0.85),
+        borderWidth: 0,
+        barPercentage: 1,
+        categoryPercentage: 1,
+        hidden: hidden.has(`${panelId}.${s.key}`),
+        ...extra,
+      };
+    }
+    return { ...base, ...extra };
   };
 
-  const plugins = [
-    twilightPlugin(getContext),
-    gridlinePlugin(getContext),
-    crosshairPlugin(getContext),
-  ];
+  const series = (id) => spec.find((p) => p.id === id).series.filter((s) => s.style !== 'arrow');
+
+  const plugins = [twilightPlugin(getContext), gridlinePlugin(getContext), crosshairPlugin(getContext)];
 
   const charts = [];
 
-  // --- 1. Temperature, apparent temperature, dewpoint ---------------------
+  // Anything positioned against the plot area from outside the canvas (the
+  // day rail, the legends) must follow Chart.js' own layout pass, not a
+  // guess at when it happens. After a window resize Chart.js re-lays out on
+  // its own throttled frame; aligning from a ResizeObserver alone raced it
+  // and could leave the day rail at the pre-resize geometry.
+  const layoutNotify = {
+    id: 'layoutNotify',
+    afterLayout: () => onLayout?.(),
+  };
+
+  // --- 1. Temperature, feels-like, dewpoint -------------------------------
   charts.push(
     new Chart(canvases.temp, {
       type: 'line',
-      data: {
-        labels: indices,
-        datasets: [
-          {
-            ...LINE_BASE,
-            label: 'Temperature',
-            data: data.temperature,
-            borderColor: theme.temp,
-            backgroundColor: fadeFill(theme.temp, 0.2),
-            fill: 'start',
-            borderWidth: 2,
-          },
-          {
-            ...LINE_BASE,
-            label: 'Feels like',
-            data: data.apparent,
-            borderColor: theme.apparent,
-            borderDash: [4, 3],
-            borderWidth: 1.4,
-          },
-          {
-            ...LINE_BASE,
-            label: 'Dewpoint',
-            data: data.dewpoint,
-            borderColor: theme.dewpoint,
-          },
-        ],
-      },
-      options: {
-        ...shared(false),
-        scales: {
-          ...shared(false).scales,
-          y: {
-            ...yBase,
-            position: 'left',
-            title: {
-              display: true,
-              text: units.symbol('temp'),
-              color: theme.inkFaint,
-              font: { size: 10, family: 'ui-monospace, monospace' },
-            },
-          },
-        },
-      },
-      plugins,
+      data: { labels: indices, datasets: series('temp').map((s) => dataset('temp', s)) },
+      options: options(false, { y: yAxis(), yMirror: mirrorOf('y') }),
+      plugins: [...plugins, layoutNotify],
     })
   );
 
-  // --- 2. Precipitation: probability as area, amount as bars -------------
+  // --- 2. Precipitation: chance as area (left), amount as bars (right) ----
+  const [pop, qpf] = series('precip');
   charts.push(
     new Chart(canvases.precip, {
       type: 'bar',
       data: {
         labels: indices,
         datasets: [
-          {
-            type: 'line',
-            ...LINE_BASE,
-            label: 'Chance',
-            data: data.pop,
-            borderColor: theme.precip,
-            backgroundColor: fadeFill(theme.precip, 0.3),
-            fill: 'start',
-            yAxisID: 'yPct',
-            order: 2,
-          },
-          {
-            type: 'bar',
-            label: 'Amount',
-            data: data.qpf,
-            backgroundColor: withAlpha(theme.qpf, 0.85),
-            borderWidth: 0,
-            yAxisID: 'yAmt',
-            barPercentage: 1,
-            categoryPercentage: 1,
-            order: 1,
-          },
+          { ...dataset('precip', pop, { yAxisID: 'yPct', order: 2 }), type: 'line' },
+          dataset('precip', qpf, { yAxisID: 'yAmt', order: 1 }),
         ],
       },
-      options: {
-        ...shared(false),
-        scales: {
-          ...shared(false).scales,
-          yPct: {
-            ...yBase,
-            position: 'left',
-            min: 0,
-            max: 100,
-            ticks: { ...yBase.ticks, stepSize: 50, callback: (v) => `${v}%` },
+      options: options(false, {
+        yPct: yAxis({ min: 0, max: 100, ticks: percentTicks }),
+        yAmt: yAxis({
+          position: 'right',
+          min: 0,
+          suggestedMax: units.name === 'imperial' ? 0.05 : 1,
+          grid: { display: false, drawTicks: false },
+          ticks: {
+            maxTicksLimit: 3,
+            callback: (v) =>
+              v === 0 ? '' : Number(v).toFixed(units.name === 'imperial' ? 2 : 1),
           },
-          yAmt: {
-            ...yBase,
-            position: 'right',
-            min: 0,
-            suggestedMax: units.name === 'imperial' ? 0.05 : 1,
-            grid: { display: false },
-            ticks: {
-              ...yBase.ticks,
-              maxTicksLimit: 3,
-              callback: (v) =>
-                v === 0 ? '' : Number(v).toFixed(units.name === 'imperial' ? 3 : 2),
-            },
-            title: {
-              display: true,
-              text: units.symbol('precipRate') + '/h',
-              color: theme.inkFaint,
-              font: { size: 10, family: 'ui-monospace, monospace' },
-            },
-          },
-        },
-      },
+        }),
+      }),
       plugins,
     })
   );
 
-  // --- 3. Cloud cover and relative humidity ------------------------------
+  // --- 3. Sky cover and relative humidity ---------------------------------
   charts.push(
     new Chart(canvases.cloud, {
       type: 'line',
-      data: {
-        labels: indices,
-        datasets: [
-          {
-            ...LINE_BASE,
-            label: 'Sky cover',
-            data: data.skyCover,
-            borderColor: withAlpha(theme.sky, 0.85),
-            backgroundColor: fadeFill(theme.sky, 0.3),
-            fill: 'start',
-            borderWidth: 1.25,
-          },
-          {
-            ...LINE_BASE,
-            label: 'Humidity',
-            data: data.humidity,
-            borderColor: theme.rh,
-          },
-        ],
-      },
-      options: {
-        ...shared(false),
-        scales: {
-          ...shared(false).scales,
-          y: {
-            ...yBase,
-            min: 0,
-            max: 100,
-            ticks: { ...yBase.ticks, stepSize: 50, callback: (v) => `${v}%` },
-          },
-        },
-      },
+      data: { labels: indices, datasets: series('cloud').map((s) => dataset('cloud', s)) },
+      options: options(false, {
+        y: yAxis({ min: 0, max: 100, ticks: percentTicks }),
+        yMirror: mirrorOf('y', { callback: percentTicks.callback }),
+      }),
       plugins,
     })
   );
 
-  // --- 4. Wind speed, gusts, and direction -------------------------------
+  // --- 4. Wind speed, gusts, and direction --------------------------------
   charts.push(
     new Chart(canvases.wind, {
       type: 'line',
-      data: {
-        labels: indices,
-        datasets: [
-          {
-            ...LINE_BASE,
-            label: 'Wind',
-            data: data.windSpeed,
-            borderColor: theme.wind,
-            backgroundColor: fadeFill(theme.wind, 0.2),
-            fill: 'start',
-          },
-          {
-            ...LINE_BASE,
-            label: 'Gusts',
-            data: data.windGust,
-            borderColor: theme.gust,
-            borderDash: [4, 3],
-            borderWidth: 1.4,
-          },
-        ],
-      },
-      options: {
-        ...shared(true),
-        layout: { padding: { top: 20 } },
-        scales: {
-          ...shared(true).scales,
-          y: {
-            ...yBase,
-            min: 0,
-            title: {
-              display: true,
-              text: units.symbol('speed'),
-              color: theme.inkFaint,
-              font: { size: 10, family: 'ui-monospace, monospace' },
-            },
-          },
-        },
-      },
+      data: { labels: indices, datasets: series('wind').map((s) => dataset('wind', s)) },
+      options: options(
+        true,
+        { y: yAxis({ min: 0 }), yMirror: mirrorOf('y') },
+        { layout: { padding: { top: 20 } } }
+      ),
       plugins: [...plugins, windArrowPlugin(getContext)],
     })
   );
 
   return charts;
+}
+
+/**
+ * Confirm every panel's plot area spans the same pixels. Returns the worst
+ * horizontal disagreement in px; anything over a pixel means the time axis is
+ * no longer shared and the crosshair will drift.
+ */
+export function plotMisalignment(charts) {
+  const areas = charts.map((c) => c.chartArea).filter(Boolean);
+  if (areas.length < 2) return 0;
+  const spread = (k) => Math.max(...areas.map((a) => a[k])) - Math.min(...areas.map((a) => a[k]));
+  return Math.max(spread('left'), spread('right'));
 }
 
 /** A small standalone chart overlaying temperature from several models. */

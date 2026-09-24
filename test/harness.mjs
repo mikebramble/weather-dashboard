@@ -78,6 +78,14 @@ class ChartStub {
   getDatasetMeta() {
     return { data: [] };
   }
+
+  setDatasetVisibility(i, visible) {
+    this.data.datasets[i].hidden = !visible;
+  }
+
+  get width() {
+    return 1000;
+  }
 }
 
 /** Router mapping request URLs to mock payloads. */
@@ -88,6 +96,9 @@ function makeFetch(scenario) {
     fetch: async (url) => {
       const u = String(url);
       log.push(u);
+      if (scenario.failAll) {
+        return { ok: false, status: 503, statusText: 'Service Unavailable', json: async () => ({}) };
+      }
 
       const json = (body) => ({
         ok: true,
@@ -136,6 +147,7 @@ export async function boot(scenario = {}) {
 
   const { window } = dom;
   const { fetch, log } = makeFetch(scenario);
+  for (const [k, v] of Object.entries(scenario.storage || {})) window.localStorage.setItem(k, v);
 
   window.Chart = ChartStub;
   window.fetch = fetch;
@@ -212,5 +224,5 @@ export async function boot(scenario = {}) {
   await new Promise((r) => setTimeout(r, 60));
   await new Promise((r) => setTimeout(r, 60));
 
-  return { dom, window, doc: window.document, app, charts: ChartStub.instances, log };
+  return { dom, window, doc: window.document, app, charts: ChartStub.instances, log, scenario };
 }
